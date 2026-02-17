@@ -3,19 +3,20 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { MarketAnalysis, ImageStyle, ImageCategory } from "../types";
 
 /**
- * 核心逻辑：获取 API 实例。
- * 遵循指南：API key 必须排他性地从 process.env.API_KEY 获取。
+ * 动态获取 AI 客户端
+ * 严格遵循开发指南：API key 必须且仅能从 process.env.API_KEY 获取。
+ * 此变量由执行环境自动注入，应用不得提供手动输入或管理界面。
  */
 const getFreshAI = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "undefined" || apiKey === "") {
-    throw new Error("AUTH_KEY_INVALID");
+  if (!apiKey) {
+    throw new Error("API_KEY_NOT_CONFIGURED");
   }
   return new GoogleGenAI({ apiKey });
 };
 
 /**
- * 通用执行器，包含指数退避重试逻辑
+ * 通用重试包装器，处理网络波动
  */
 async function executeWithRetry<T>(fn: (ai: GoogleGenAI) => Promise<T>, retries = 2): Promise<T> {
   try {
@@ -23,22 +24,21 @@ async function executeWithRetry<T>(fn: (ai: GoogleGenAI) => Promise<T>, retries 
     return await fn(ai);
   } catch (error: any) {
     const msg = error.message || "";
+    console.error("[电商宝内核错误]:", error);
+
     if (msg.includes("fetch") || msg.includes("NetworkError") || msg.includes("failed to fetch")) {
       if (retries > 0) {
-        await new Promise(r => setTimeout(r, 2000 * (3 - retries)));
+        await new Promise(r => setTimeout(r, 1500 * (3 - retries)));
         return executeWithRetry(fn, retries - 1);
       }
-      throw new Error("NETWORK_BLOCKED_CN");
-    }
-    if (msg.includes("API key not valid") || msg.includes("AUTH_KEY_INVALID") || msg.includes("API_KEY_MISSING") || msg.includes("Requested entity was not found")) {
-      throw new Error("AUTH_KEY_INVALID");
+      throw new Error("网络连接超时，请检查全局代理设置。");
     }
     throw error;
   }
 }
 
 /**
- * 分析产品并生成营销建议
+ * 产品深度分析与卖点提取
  */
 export async function analyzeProduct(base64Image: string): Promise<MarketAnalysis> {
   return executeWithRetry(async (ai) => {
@@ -47,7 +47,7 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
       contents: {
         parts: [
           { inlineData: { data: base64Image, mimeType: 'image/png' } },
-          { text: `你现在是电商助手“电商宝”的首席视觉专家。请分析此图。输出 JSON 格式。包含：productType, targetAudience, sellingPoints, suggestedPrompt, recommendedCategories, marketingCopy (title, shortDesc, tags)。注意：分析必须精准到电商类目。` }
+          { text: `你现在是电商助手“电商宝”的视觉导演。请分析此图，输出 JSON 格式。包含：productType, targetAudience, sellingPoints, suggestedPrompt, recommendedCategories, marketingCopy (title, shortDesc, tags)。` }
         ]
       },
       config: {
@@ -77,7 +77,7 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
 }
 
 /**
- * 生成产品展示图 (重构背景)
+ * 电商背景重构与渲染
  */
 export async function generateProductDisplay(
   base64Image: string, 
@@ -91,35 +91,34 @@ export async function generateProductDisplay(
 ): Promise<string> {
   return executeWithRetry(async (ai) => {
     const categoryMap: Record<ImageCategory, string> = {
-      [ImageCategory.WHITEBG]: "Pure white infinity cove studio background, high-key clean look.",
-      [ImageCategory.POSTER]: "Avant-garde editorial layout, balanced negative space for copy.",
-      [ImageCategory.MODEL]: "Subtle human presence, holding or interacting with product naturally.",
-      [ImageCategory.DETAIL]: "Ultra-macro shot, extreme close-up, premium texture focus.",
-      [ImageCategory.SOCIAL]: "Trendy lifestyle setup, soft natural light, warm aesthetic vibe.",
-      [ImageCategory.GIFT]: "Elegant luxury gift wrap environment, silk ribbons, festive mood.",
-      [ImageCategory.LIFESTYLE]: "High-end interior architecture, aspirational lifestyle setting.",
-      [ImageCategory.DISPLAY]: "Professional studio pedestal, sharp product focus."
+      [ImageCategory.WHITEBG]: "Pure white studio background.",
+      [ImageCategory.POSTER]: "High-end editorial poster layout.",
+      [ImageCategory.MODEL]: "Fashion lifestyle with soft human context.",
+      [ImageCategory.DETAIL]: "Macro professional product photography.",
+      [ImageCategory.SOCIAL]: "Trendy soft-focus social media aesthetic.",
+      [ImageCategory.GIFT]: "Premium gift box environment with festive mood.",
+      [ImageCategory.LIFESTYLE]: "Modern domestic interior setting.",
+      [ImageCategory.DISPLAY]: "Gallery exhibition display stand."
     };
 
-    const prompt = `
-      ROLE: "电商宝" Senior Visual Director.
-      MISSION: 100% RE-RENDER ENVIRONMENT. REMOVE ALL ORIGINAL BACKGROUND PIXELS.
-      PRODUCT CONTEXT: ${marketAnalysis.productType}, ${marketAnalysis.sellingPoints.join(', ')}.
-      TARGET SCENE: ${categoryMap[category]}
-      VISUAL STYLE: ${style}
-      FINE-TUNING TAGS: ${fineTunePrompts.join(', ')}
-      TECHNICAL SPECS: Commercial grade photography, ray tracing, accurate shadows, 8k resolution, cinematic lighting.
-      ${chatHistory.length > 0 ? `MODIFICATION REQUESTS: ${chatHistory.map(m => m.text).join('; ')}` : ""}
+    const systemPrompt = `
+      ROLE: "电商宝" AI Visual Master.
+      TASK: RE-RENDER THE BACKGROUND. KEEP PRODUCT PIXELS INTACT BUT ENHANCE LIGHTING.
+      SCENE: ${categoryMap[category]}
+      STYLE: ${style}
+      CONTEXT: ${marketAnalysis.productType}, ${marketAnalysis.sellingPoints.join(', ')}.
+      EXTRA: ${fineTunePrompts.join(', ')}.
+      ${chatHistory.length > 0 ? `REFINEMENT: ${chatHistory.map(m => m.text).join('; ')}` : ""}
     `;
 
-    const modelName = isUltraHD ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+    const model = isUltraHD ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
     
     const response = await ai.models.generateContent({
-      model: modelName,
+      model,
       contents: {
         parts: [
           { inlineData: { data: base64Image, mimeType: 'image/png' } },
-          { text: prompt },
+          { text: systemPrompt },
         ],
       },
       config: {
@@ -134,6 +133,6 @@ export async function generateProductDisplay(
     if (imgPart?.inlineData) {
       return `data:image/png;base64,${imgPart.inlineData.data}`;
     }
-    throw new Error("IMAGE_GEN_FAILED");
+    throw new Error("生成结果不含图像数据，请检查输入原图。");
   });
 }
