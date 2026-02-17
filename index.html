@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电商宝 - 您的 AI 电商视觉助手</title>
+    <meta name="description" content="电商宝 - 专为商家打造的 AI 电商作图神器。支持 100% 背景重构、高清渲染与智能卖点分析。">
+    <meta name="keywords" content="电商宝,AI抠图,背景替换,淘宝美工,小红书配图,Gemini AI">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+          font-family: 'Inter', sans-serif; 
+          background-color: #FFFBF5;
+          color: #4338ca;
+          overflow-x: hidden;
+        }
+        .vision-shadow {
+          box-shadow: 0 20px 50px -12px rgba(251, 146, 60, 0.1);
+        }
+        .vision-gradient {
+          background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #FFF7ED; }
+        ::-webkit-scrollbar-thumb { background: #FED7AA; border-radius: 10px; }
+        
+        @keyframes float {
+          0% { transform: translateY(0px) rotate(-5deg); }
+          50% { transform: translateY(-10px) rotate(5deg); }
+          100% { transform: translateY(0px) rotate(-5deg); }
+        }
+        .animate-float {
+          animation: float 3s ease-in-out infinite;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4"
+  }
+}
+</script>
+</head>
+<body class="antialiased">
+    <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
+</body>
+</html>
