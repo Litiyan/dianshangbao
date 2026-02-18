@@ -1,82 +1,106 @@
 
 import { MarketAnalysis, ImageStyle, ImageCategory } from "../types";
 
+// 定义后端接口地址（BFF 模式）
+const API_ENDPOINT = '/api/gemini';
+
 /**
- * 私有助手：通过 Cloudflare Pages Function 调用 Gemini
+ * 通用的后端调用函数 (BFF模式)
+ * 负责将请求转发给 Cloudflare Functions，绕过浏览器端的网络限制
  */
 async function callGeminiBff(payload: any) {
-  const response = await fetch('/api/gemini', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const response = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-  const data = await response.json().catch(() => ({ error: "UNKNOWN_ERROR" }));
+    const data = await response.json().catch(() => ({ error: "RESPONSE_NOT_JSON" }));
 
-  if (!response.ok) {
-    // 处理 Google API 报错 (429 RESOURCE_EXHAUSTED)
-    if (response.status === 429 || (data.error && (data.error === "RESOURCE_EXHAUSTED" || data.error.status === "RESOURCE_EXHAUSTED"))) {
-      const errorMsg = data.message || (data.error && data.error.message) || "";
-      
-      if (errorMsg.includes("limit: 0") || errorMsg.includes("quota") || errorMsg.includes("free_tier")) {
-        throw new Error("检测到 API 权限受限。虽然您已开启 Billing，但生效可能需要几分钟，或请检查 API Key 是否属于该付费项目。");
+    if (!response.ok) {
+      // 针对配额不足或权限受限的特定处理
+      if (response.status === 429 || (data.error && (data.error === "RESOURCE_EXHAUSTED" || data.error.status === "RESOURCE_EXHAUSTED"))) {
+        const msg = data.message || (data.error && data.error.message) || "";
+        if (msg.includes("limit: 0")) {
+          throw new Error("检测到预览版模型配额受限 (limit: 0)。请确保代码已更新为正式版模型 'gemini-2.5-flash-image' 且 Billing 已生效。");
+        }
+        throw new Error("API 请求过于频繁或配额耗尽，请稍后再试。");
       }
       
-      throw new Error("请求过于频繁，请稍后再试。");
+      throw new Error(data.message || (data.error && data.error.message) || `API 请求失败: ${response.status}`);
     }
-    
-    throw new Error(data.message || (data.error && data.error.message) || `服务器响应异常 (HTTP ${response.status})`);
-  }
 
-  return data;
+    return data;
+  } catch (error: any) {
+    console.error("BFF 调用错误:", error);
+    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
+      throw new Error("网络连接失败。请确保您的 Cloudflare Pages 后台 API 路由正常工作。");
+    }
+    throw error;
+  }
 }
 
 /**
- * 产品深度分析与卖点提取 (通过 BFF)
+ * 1. 分析产品并生成营销建议
+ * 使用 gemini-2.0-flash 进行稳健的文本分析
  */
 export async function analyzeProduct(base64Image: string): Promise<MarketAnalysis> {
+  const modelName = 'gemini-2.0-flash'; 
+  
+  const systemPrompt = `你现在是电商助手“电商宝”的首席视觉专家。请分析此图。
+  必须严格输出纯 JSON 格式。包含：
+  - productType (商品类型)
+  - targetAudience (目标人群)
+  - sellingPoints (卖点数组)
+  - suggestedPrompt (生图提示词建议)
+  - recommendedCategories (推荐分类数组)
+  - marketingCopy (营销文案对象: title, shortDesc, tags)`;
+
   const payload = {
-    model: 'gemini-3-flash-preview',
+    model: modelName,
     contents: {
       parts: [
         { inlineData: { data: base64Image, mimeType: 'image/png' } },
-        { text: `你现在是电商助手“电商宝”的视觉导演。请分析此图，输出 JSON 格式。包含：productType, targetAudience, sellingPoints, suggestedPrompt, recommendedCategories, marketingCopy (title, shortDesc, tags)。` }
+        { text: systemPrompt }
       ]
     },
     config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          productType: { type: "STRING" },
-          targetAudience: { type: "STRING" },
-          sellingPoints: { type: "ARRAY", items: { type: "STRING" } },
-          suggestedPrompt: { type: "STRING" },
-          recommendedCategories: { type: "ARRAY", items: { type: "STRING" } },
-          marketingCopy: {
-            type: "OBJECT",
-            properties: {
-              title: { type: "STRING" },
-              shortDesc: { type: "STRING" },
-              tags: { type: "ARRAY", items: { type: "STRING" } }
-            }
-          }
-        }
-      }
+      responseMimeType: "application/json"
     }
   };
 
-  const result = await callGeminiBff(payload);
-  // 对于分析模型，直接读取返回的 JSON 字符串
-  return JSON.parse(result.text || '{}') as MarketAnalysis;
+  try {
+    const result = await callGeminiBff(payload);
+    
+    // 兼容多种返回结构
+    const candidates = result.candidates || [];
+    let rawText = "";
+    if (candidates.length > 0 && candidates[0].content && candidates[0].content.parts) {
+      const textPart = candidates[0].content.parts.find((p: any) => p.text);
+      if (textPart) rawText = textPart.text;
+    } else if (result.text) {
+      rawText = result.text;
+    }
+
+    if (rawText) {
+      const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(cleanJson) as MarketAnalysis;
+    }
+    throw new Error("模型未返回有效的分析结果");
+  } catch (error) {
+    console.error("分析产品失败:", error);
+    throw error;
+  }
 }
 
 /**
- * 电商背景重构与渲染 (通过 BFF)
+ * 2. 生成产品展示图
+ * 核心修复：强制使用正式版模型 gemini-2.5-flash-image，解决 limit: 0 问题
  */
 export async function generateProductDisplay(
-  base64Image: string, 
-  style: ImageStyle, 
+  base64Image: string,
+  style: ImageStyle,
   category: ImageCategory,
   aspectRatio: string,
   marketAnalysis: MarketAnalysis,
@@ -84,48 +108,60 @@ export async function generateProductDisplay(
   isUltraHD: boolean,
   chatHistory: {role: 'user' | 'assistant', text: string}[] = []
 ): Promise<string> {
+  
   const categoryMap: Record<ImageCategory, string> = {
-    [ImageCategory.WHITEBG]: "Pure white studio background.",
-    [ImageCategory.POSTER]: "High-end editorial poster layout.",
-    [ImageCategory.MODEL]: "Fashion lifestyle with soft human context.",
-    [ImageCategory.DETAIL]: "Macro professional product photography.",
-    [ImageCategory.SOCIAL]: "Trendy soft-focus social media aesthetic.",
-    [ImageCategory.GIFT]: "Premium gift box environment with festive mood.",
-    [ImageCategory.LIFESTYLE]: "Modern domestic interior setting.",
-    [ImageCategory.DISPLAY]: "Gallery exhibition display stand."
+    [ImageCategory.WHITEBG]: "Pure white infinity cove studio background.",
+    [ImageCategory.POSTER]: "Modern editorial poster layout with clean space.",
+    [ImageCategory.MODEL]: "Fashion lifestyle setting with soft human interaction.",
+    [ImageCategory.DETAIL]: "Macro professional photography with extreme bokeh.",
+    [ImageCategory.SOCIAL]: "Trendy Xiaohongshu aesthetic with soft warm lighting.",
+    [ImageCategory.GIFT]: "Exquisite festive gift setting with ribbons and bokeh.",
+    [ImageCategory.LIFESTYLE]: "High-end contemporary interior architecture.",
+    [ImageCategory.DISPLAY]: "Art gallery pedestal in a clean bright room."
   };
 
-  const systemPrompt = `
-    ROLE: "电商宝" AI Visual Master.
-    TASK: RE-RENDER THE BACKGROUND. KEEP PRODUCT PIXELS INTACT BUT ENHANCE LIGHTING AND ENVIRONMENT.
-    SCENE: ${categoryMap[category]}
-    STYLE: ${style}
+  const systemMandate = `
+    ROLE: You are "电商宝" AI Engine.
+    MANDATE: 100% RE-RENDER THE ENVIRONMENT. ERASE ORIGINAL BACKGROUND.
+    LIGHTING: Re-calculate all shadows based on the new scene.
+    QUALITY: Masterpiece, 8k, commercial product photography.
+  `;
+
+  const chatContext = chatHistory.length > 0 
+    ? `\nREFINEMENT REQUESTS:\n${chatHistory.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n')}`
+    : "";
+
+  const finalPrompt = `${systemMandate}
+    TARGET SCENE: ${categoryMap[category]}
+    VISUAL STYLE: ${style}
+    TECHNICAL: ${fineTunePrompts.join(', ')}
     CONTEXT: ${marketAnalysis.productType}, ${marketAnalysis.sellingPoints.join(', ')}.
-    EXTRA: ${fineTunePrompts.join(', ')}.
-    ${chatHistory.length > 0 ? `REFINEMENT HISTORY: ${chatHistory.map(m => m.text).join('; ')}` : ""}
+    ${chatContext}
     OUTPUT: Return the final generated image.
   `;
 
-  // 正确使用具备图像生成功能的模型名称
+  // 🔴 强制使用正式版模型，去除 'preview' 字样
+  const modelName = 'gemini-2.5-flash-image'; 
+
   const payload = {
-    model: isUltraHD ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image',
+    model: modelName,
     contents: {
       parts: [
         { inlineData: { data: base64Image, mimeType: 'image/png' } },
-        { text: systemPrompt },
+        { text: finalPrompt },
       ],
     },
     config: {
-      imageConfig: { 
+      imageConfig: {
         aspectRatio: aspectRatio as any,
-        imageSize: isUltraHD ? "2K" : "1K"
+        // 建议初次测试使用 1K 以确保成功，2.5-flash-image 对 1K 支持最稳
+        imageSize: "1K" 
       }
     },
   };
 
   const result = await callGeminiBff(payload);
   
-  // 遍历 candidates 寻找图像数据
   const candidates = result.candidates || [];
   if (candidates.length > 0) {
     const parts = candidates[0].content.parts;
@@ -134,6 +170,6 @@ export async function generateProductDisplay(
       return `data:image/png;base64,${imgPart.inlineData.data}`;
     }
   }
-  
-  throw new Error("模型已响应，但未包含有效的图像像素。请尝试减少提示词的复杂度。");
+
+  throw new Error("模型已响应，但未包含有效的图像像素。可能是提示词触发了安全过滤。");
 }
