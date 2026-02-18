@@ -23,7 +23,7 @@ async function callGeminiBff(payload: any) {
       if (response.status === 429 || (data.error && (data.error === "RESOURCE_EXHAUSTED" || data.error.status === "RESOURCE_EXHAUSTED"))) {
         const msg = data.message || (data.error && data.error.message) || "";
         if (msg.includes("limit: 0")) {
-          throw new Error("检测到预览版模型配额受限 (limit: 0)。请确保代码已更新为正式版模型 'gemini-2.5-flash-image' 且 Billing 已生效。");
+          throw new Error("检测到模型配额受限 (limit: 0)。请确保已在 Google AI Studio 绑定结算账户(Billing)，且代码已指定正式版模型 'gemini-2.5-flash-image'。");
         }
         throw new Error("API 请求过于频繁或配额耗尽，请稍后再试。");
       }
@@ -73,7 +73,6 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
   try {
     const result = await callGeminiBff(payload);
     
-    // 兼容多种返回结构
     const candidates = result.candidates || [];
     let rawText = "";
     if (candidates.length > 0 && candidates[0].content && candidates[0].content.parts) {
@@ -96,7 +95,7 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
 
 /**
  * 2. 生成产品展示图
- * 核心修复：强制使用正式版模型 gemini-2.5-flash-image，解决 limit: 0 问题
+ * (修复：强制使用正式版模型，解决 limit: 0 问题)
  */
 export async function generateProductDisplay(
   base64Image: string,
@@ -140,7 +139,7 @@ export async function generateProductDisplay(
     OUTPUT: Return the final generated image.
   `;
 
-  // 🔴 强制使用正式版模型，去除 'preview' 字样
+  // 🔴 核心修改：使用正式版模型名称，不带 preview
   const modelName = 'gemini-2.5-flash-image'; 
 
   const payload = {
@@ -154,7 +153,6 @@ export async function generateProductDisplay(
     config: {
       imageConfig: {
         aspectRatio: aspectRatio as any,
-        // 建议初次测试使用 1K 以确保成功，2.5-flash-image 对 1K 支持最稳
         imageSize: "1K" 
       }
     },
@@ -171,5 +169,5 @@ export async function generateProductDisplay(
     }
   }
 
-  throw new Error("模型已响应，但未包含有效的图像像素。可能是提示词触发了安全过滤。");
+  throw new Error("模型已响应，但未包含有效的图像像素。可能是提示词被安全策略拦截。");
 }
