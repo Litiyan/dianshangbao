@@ -11,12 +11,24 @@ async function callGeminiBff(payload: any) {
     body: JSON.stringify(payload)
   });
 
+  const data = await response.json().catch(() => ({ error: "UNKNOWN_ERROR" }));
+
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: "UNKNOWN_ERROR" }));
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`);
+    // 处理 Google API 报错 (429 RESOURCE_EXHAUSTED)
+    if (response.status === 429 || (data.error && (data.error === "RESOURCE_EXHAUSTED" || data.error.status === "RESOURCE_EXHAUSTED"))) {
+      const errorMsg = data.message || (data.error && data.error.message) || "";
+      
+      if (errorMsg.includes("limit: 0") || errorMsg.includes("quota") || errorMsg.includes("free_tier")) {
+        throw new Error("检测到 API 权限受限。虽然您已开启 Billing，但生效可能需要几分钟，或请检查 API Key 是否属于该付费项目。");
+      }
+      
+      throw new Error("请求过于频繁，请稍后再试。");
+    }
+    
+    throw new Error(data.message || (data.error && data.error.message) || `服务器响应异常 (HTTP ${response.status})`);
   }
 
-  return await response.json();
+  return data;
 }
 
 /**
@@ -33,7 +45,6 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
     },
     config: {
       responseMimeType: "application/json",
-      // 在无 SDK 的前端直接使用字符串定义 Schema 类型
       responseSchema: {
         type: "OBJECT",
         properties: {
@@ -56,7 +67,7 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
   };
 
   const result = await callGeminiBff(payload);
-  // 解析 BFF 返回的 text
+  // 对于分析模型，直接读取返回的 JSON 字符串
   return JSON.parse(result.text || '{}') as MarketAnalysis;
 }
 
@@ -86,14 +97,16 @@ export async function generateProductDisplay(
 
   const systemPrompt = `
     ROLE: "电商宝" AI Visual Master.
-    TASK: RE-RENDER THE BACKGROUND. KEEP PRODUCT PIXELS INTACT BUT ENHANCE LIGHTING.
+    TASK: RE-RENDER THE BACKGROUND. KEEP PRODUCT PIXELS INTACT BUT ENHANCE LIGHTING AND ENVIRONMENT.
     SCENE: ${categoryMap[category]}
     STYLE: ${style}
     CONTEXT: ${marketAnalysis.productType}, ${marketAnalysis.sellingPoints.join(', ')}.
     EXTRA: ${fineTunePrompts.join(', ')}.
-    ${chatHistory.length > 0 ? `REFINEMENT: ${chatHistory.map(m => m.text).join('; ')}` : ""}
+    ${chatHistory.length > 0 ? `REFINEMENT HISTORY: ${chatHistory.map(m => m.text).join('; ')}` : ""}
+    OUTPUT: Return the final generated image.
   `;
 
+  // 正确使用具备图像生成功能的模型名称
   const payload = {
     model: isUltraHD ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image',
     contents: {
@@ -112,13 +125,15 @@ export async function generateProductDisplay(
 
   const result = await callGeminiBff(payload);
   
-  // 遍历 candidates 寻找 inlineData 部分
+  // 遍历 candidates 寻找图像数据
   const candidates = result.candidates || [];
-  const imgPart = candidates[0]?.content?.parts.find((p: any) => p.inlineData);
-  
-  if (imgPart?.inlineData) {
-    return `data:image/png;base64,${imgPart.inlineData.data}`;
+  if (candidates.length > 0) {
+    const parts = candidates[0].content.parts;
+    const imgPart = parts.find((p: any) => p.inlineData);
+    if (imgPart?.inlineData?.data) {
+      return `data:image/png;base64,${imgPart.inlineData.data}`;
+    }
   }
   
-  throw new Error("生成结果不含图像数据，请检查输入原图或调整描述词。");
+  throw new Error("模型已响应，但未包含有效的图像像素。请尝试减少提示词的复杂度。");
 }
