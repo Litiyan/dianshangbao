@@ -1,0 +1,7 @@
+{
+  "name": "E-Commerce Image Pro",
+  "description": "Professional e-commerce product image generator and market analyzer for Taobao and JD.com merchants. Transforms raw product photos into high-conversion lifestyle and studio shots.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
