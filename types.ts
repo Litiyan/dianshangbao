@@ -41,4 +41,20 @@ export interface MarketAnalysis {
   suggestedPrompt: string;
   recommendedCategories: ImageCategory[];
   marketingCopy: MarketingCopy;
+  isApparel: boolean; // 是否为服饰类（触发 AI 模特入口）
 }
+
+export interface GeneratedImage {
+  url: string;
+  category: ImageCategory;
+  platformName: string;
+  description: string;
+  aspectRatio: string;
+}
+
+export interface GeneratedSuite {
+  preview: string;
+  items: GeneratedImage[];
+  modelImage?: string;
+}
+
