@@ -1,53 +1,57 @@
 
+import { GoogleGenAI, Type } from "@google/genai";
 import { MarketAnalysis, ImageStyle, ImageCategory, GeneratedImage } from "../types";
 
-const API_ENDPOINT = '/api/gemini';
-
-async function callGeminiBff(payload: any) {
-  try {
-    const response = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json().catch(() => ({ error: "RESPONSE_NOT_JSON" }));
-    if (!response.ok) {
-      if (response.status === 429 || (data.error && data.error.status === "RESOURCE_EXHAUSTED")) {
-        throw new Error("配额不足或 Billing 未开启。请检查 Google AI Studio 结算设置。");
-      }
-      throw new Error(data.message || (data.error && data.error.message) || `API 请求失败: ${response.status}`);
-    }
-    return data;
-  } catch (error: any) {
-    console.error("BFF 调用错误:", error);
-    throw error;
-  }
-}
+// Initialize the Gemini API client
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 /**
- * 1. 深度分析产品
+ * 1. Analyze product image for metadata and marketing insights
  */
 export async function analyzeProduct(base64Image: string): Promise<MarketAnalysis> {
-  const modelName = 'gemini-2.0-flash'; 
-  const systemPrompt = `你现在是电商助手“电商宝”的首席视觉专家。
-  分析此图，输出 JSON 格式。
-  必须准确判断 isApparel (如果产品是衣服、裤子、鞋、包、帽子、配饰，则为 true)。
-  JSON 结构: { productType, targetAudience, sellingPoints[], suggestedPrompt, recommendedCategories[], marketingCopy: {title, shortDesc, tags[]}, isApparel }`;
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { data: base64Image, mimeType: 'image/png' } },
+          { text: "Analyze this e-commerce product image and provide structured data for marketing generation." }
+        ]
+      }
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          productType: { type: Type.STRING },
+          targetAudience: { type: Type.STRING },
+          sellingPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+          suggestedPrompt: { type: Type.STRING },
+          recommendedCategories: { type: Type.ARRAY, items: { type: Type.STRING } },
+          marketingCopy: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              shortDesc: { type: Type.STRING },
+              tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["title", "shortDesc", "tags"]
+          },
+          isApparel: { type: Type.BOOLEAN, description: "Whether the product is a wearable clothing item or accessory" }
+        },
+        required: ["productType", "targetAudience", "sellingPoints", "suggestedPrompt", "recommendedCategories", "marketingCopy", "isApparel"]
+      }
+    }
+  });
 
-  const payload = {
-    model: modelName,
-    contents: { parts: [{ inlineData: { data: base64Image, mimeType: 'image/png' } }, { text: systemPrompt }] },
-    config: { responseMimeType: "application/json" }
-  };
-
-  const result = await callGeminiBff(payload);
-  let rawText = result.text || (result.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text) || "";
-  const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-  return JSON.parse(cleanJson) as MarketAnalysis;
+  return JSON.parse(response.text) as MarketAnalysis;
 }
 
 /**
- * 2. 生成预览图 (快速/通用商业风格)
+ * 2. Generate a preview image (Standard Studio Shot)
  */
 export async function generatePreview(
   base64Image: string,
@@ -55,30 +59,35 @@ export async function generatePreview(
   analysis: MarketAnalysis,
   userTweaks: string = ""
 ): Promise<string> {
-  const modelName = 'gemini-2.5-flash-image';
+  const ai = getAI();
   const prompt = `
-    ROLE: Professional Commercial Photographer.
-    SCENE: Clean, bright studio with high-end commercial lighting.
+    TASK: Professional e-commerce product photography reconstruction.
     STYLE: ${style}.
-    PRODUCT: ${analysis.productType}, ${analysis.sellingPoints.join(', ')}.
-    USER_REFINEMENT: ${userTweaks}
-    MANDATE: 100% background removal and re-render. 8k, realistic shadows, product centered.
+    PRODUCT: ${analysis.productType}, highlighting: ${analysis.sellingPoints.join(', ')}.
+    MODIFIER: ${userTweaks || "Clean studio lighting, professional product placement, sharp details."}
+    MANDATE: 100% background removal. Replace with high-quality ${style} background. Maintain product perspective and scale. Realistic shadows and lighting. 8k resolution.
   `;
 
-  const payload = {
-    model: modelName,
-    contents: { parts: [{ inlineData: { data: base64Image, mimeType: 'image/png' } }, { text: prompt }] },
-    config: { imageConfig: { aspectRatio: "1:1", imageSize: "1K" } }
-  };
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: {
+      parts: [
+        { inlineData: { data: base64Image, mimeType: 'image/png' } },
+        { text: prompt }
+      ]
+    },
+    config: {
+      imageConfig: { aspectRatio: "1:1" }
+    }
+  });
 
-  const result = await callGeminiBff(payload);
-  const imgData = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
-  if (!imgData) throw new Error("预览图生成失败");
-  return `data:image/png;base64,${imgData}`;
+  const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+  if (!imagePart) throw new Error("Image generation failed");
+  return `data:image/png;base64,${imagePart.inlineData.data}`;
 }
 
 /**
- * 3. 生成全套专家级资产 (多渠道差异化)
+ * 3. Generate a full marketing suite of images for different platforms
  */
 export async function generateMarketingSuite(
   base64Image: string,
@@ -86,61 +95,64 @@ export async function generateMarketingSuite(
   style: ImageStyle,
   userTweaks: string = ""
 ): Promise<GeneratedImage[]> {
+  const ai = getAI();
+  
   const suiteConfigs = [
     {
       id: ImageCategory.DISPLAY,
-      platform: "淘宝/京东主图",
+      platform: "Main Listing (1:1)",
       ratio: "1:1",
-      desc: "高点击率主图：50mm 黄金焦段，极简高光，主体高亮。",
-      prompt: "Setup: Professional 50mm lens photography, high CTR e-commerce style, center composition, soft shadows, sharp focus, studio lighting."
+      prompt: "50mm lens, studio lighting, soft shadows, center composition, high-end e-commerce style."
     },
     {
       id: ImageCategory.SOCIAL,
-      platform: "小红书氛围图",
+      platform: "Social Media (3:4)",
       ratio: "3:4",
-      desc: "社区种草：35mm 人文焦段，自然窗光，温馨生活化场景。",
-      prompt: "Setup: 35mm lens lifestyle photography, natural window lighting, beautiful bokeh, cozy atmosphere, Instagram/XHS aesthetic."
+      prompt: "Lifestyle photography, 35mm lens, natural lighting, bokeh background, lifestyle props."
     },
     {
       id: ImageCategory.DETAIL,
-      platform: "详情页细节",
+      platform: "Detail Shot (1:1)",
       ratio: "1:1",
-      desc: "细节特写：100mm 微距，展现极高清材质纹理。",
-      prompt: "Setup: 100mm Macro lens, extreme close-up, f/8, ultra-sharp focus on texture and fabric, professional retouching."
+      prompt: "Macro photography, focus on texture and material quality, extreme close-up, dramatic side lighting."
     },
     {
       id: ImageCategory.WHITEBG,
-      platform: "合规白底图",
+      platform: "Pure White BG (1:1)",
       ratio: "1:1",
-      desc: "平台白底：100% 纯白 (#FFFFFF)，专业柔光，符合平台规范。",
-      prompt: "Setup: Pure white background #FFFFFF, soft drop shadow, no scenery, ultra-clean product cutout style."
+      prompt: "Strictly pure white background (#FFFFFF), clean isolation, soft floor shadow only."
     }
   ];
 
-  const modelName = 'gemini-2.5-flash-image';
-  
   const tasks = suiteConfigs.map(async (cfg) => {
     const finalPrompt = `
-      ${cfg.prompt}
-      PRODUCT: ${analysis.productType}
-      STYLE: ${style}
+      PLATFORM: ${cfg.platform}.
+      SETUP: ${cfg.prompt}
+      STYLE: ${style}.
+      PRODUCT: ${analysis.productType}.
       TWEAKS: ${userTweaks}
-      MANDATE: 100% background replacement, 8k resolution, commercial grade.
+      RECONSTRUCTION: High-fidelity product preservation, 100% environment swap.
     `;
 
-    const payload = {
-      model: modelName,
-      contents: { parts: [{ inlineData: { data: base64Image, mimeType: 'image/png' } }, { text: finalPrompt }] },
-      config: { imageConfig: { aspectRatio: cfg.ratio as any, imageSize: "1K" } }
-    };
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          { inlineData: { data: base64Image, mimeType: 'image/png' } },
+          { text: finalPrompt }
+        ]
+      },
+      config: {
+        imageConfig: { aspectRatio: cfg.ratio as any }
+      }
+    });
 
-    const result = await callGeminiBff(payload);
-    const imgData = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
+    const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
     return {
-      url: imgData ? `data:image/png;base64,${imgData}` : "",
+      url: imagePart ? `data:image/png;base64,${imagePart.inlineData.data}` : "",
       category: cfg.id,
       platformName: cfg.platform,
-      description: cfg.desc,
+      description: cfg.prompt,
       aspectRatio: cfg.ratio
     };
   });
@@ -149,32 +161,38 @@ export async function generateMarketingSuite(
 }
 
 /**
- * 4. 生成 AI 模特试穿 (服饰类专供)
+ * 4. AI Virtual Model Try-on
  */
 export async function generateModelImage(
   base64Image: string,
   analysis: MarketAnalysis,
   showFace: boolean = true
 ): Promise<string> {
-  const modelName = 'gemini-2.5-flash-image';
-  const faceOption = showFace ? "Beautiful confident face" : "Crop above mouth, focus on the outfit body";
+  const ai = getAI();
+  const faceOption = showFace ? "Clear visible professional model face" : "Crop at chin or upper face, focus on body fit";
   
   const prompt = `
-    ROLE: High-end Fashion Magazine Photographer.
-    SUBJECT: Realistic Asian fashion model wearing this ${analysis.productType}. ${faceOption}.
-    SCENE: Minimalist modern boutique or professional fashion studio.
-    TEXTURE: Realistic skin texture, realistic human anatomy, professional soft lighting.
-    MANDATE: 8k photorealistic, fashion catalogue style.
+    FASHION CATALOGUE: Realistic human model wearing this exact ${analysis.productType}. 
+    MODEL: Professional posing, realistic skin texture, high-end look. ${faceOption}.
+    SCENE: Minimalist high-fashion studio.
+    LIGHTING: Softbox lighting, editorial style.
+    REPLACEMENT: Integrate the product seamlessly onto the model's body with correct physics and draping.
   `;
 
-  const payload = {
-    model: modelName,
-    contents: { parts: [{ inlineData: { data: base64Image, mimeType: 'image/png' } }, { text: prompt }] },
-    config: { imageConfig: { aspectRatio: "3:4", imageSize: "1K" } }
-  };
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: {
+      parts: [
+        { inlineData: { data: base64Image, mimeType: 'image/png' } },
+        { text: prompt }
+      ]
+    },
+    config: {
+      imageConfig: { aspectRatio: "3:4" }
+    }
+  });
 
-  const result = await callGeminiBff(payload);
-  const imgData = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
-  if (!imgData) throw new Error("模特图生成失败");
-  return `data:image/png;base64,${imgData}`;
+  const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+  if (!imagePart) throw new Error("Model image generation failed");
+  return `data:image/png;base64,${imagePart.inlineData.data}`;
 }
