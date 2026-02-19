@@ -39,7 +39,7 @@ const App: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<{title: string, msg: string} | null>(null);
 
-  // 加载文案轮播
+  // 轮播加载文案
   useEffect(() => {
     let interval: any;
     if (isProcessing) {
@@ -112,7 +112,7 @@ const App: React.FC = () => {
       setModelImage(res);
       setStep('suite');
     } catch (err: any) {
-      setError({ title: "模特试穿失败", msg: err.message });
+      setError({ title: "模特图失败", msg: err.message });
     } finally {
       setIsProcessing(false);
     }
@@ -122,31 +122,34 @@ const App: React.FC = () => {
     const styles = Object.values(ImageStyle);
     const randomStyle = styles[Math.floor(Math.random() * styles.length)];
     setSelectedStyle(randomStyle as ImageStyle);
-    startPreview("给我一个意想不到的惊喜风格，发挥创意。");
+    startPreview("给我一个意想不到的惊喜风格，发挥极致创意。");
   };
 
   return (
-    <div className="min-h-screen bg-[#FDFCFB] text-slate-900 pb-20 font-sans">
-      {/* 顶部导航 */}
+    <div className="min-h-screen bg-[#FDFCFB] text-slate-900 pb-20 font-sans selection:bg-orange-100">
+      {/* 导航 */}
       <nav className="h-20 bg-white/70 backdrop-blur-2xl sticky top-0 z-50 px-8 flex items-center justify-between border-b border-slate-100">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.location.reload()}>
-          <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
+        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => window.location.reload()}>
+          <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-xl flex items-center justify-center shadow-lg group-hover:rotate-12 transition-transform">
             <Sparkles className="text-white w-5 h-5" />
           </div>
           <h1 className="text-xl font-black tracking-tight">电商宝 <span className="text-orange-500 font-medium">Suite</span></h1>
         </div>
         <div className="flex gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-full border border-slate-100">
+          <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-full border border-slate-100">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-[10px] font-black uppercase text-slate-500">双链路已就绪</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">双链路已就绪</span>
           </div>
+          <button className="px-6 py-2.5 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-slate-200">
+             企业版定制
+          </button>
         </div>
       </nav>
 
-      <div className="max-w-[1400px] mx-auto p-8 grid grid-cols-12 gap-10">
-        {/* 左侧控制区 */}
+      <div className="max-w-[1440px] mx-auto p-8 grid grid-cols-12 gap-10">
+        {/* 控制侧栏 */}
         <aside className="col-span-12 lg:col-span-4 space-y-6">
-          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 space-y-8">
+          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 space-y-8 sticky top-28">
             <div>
               <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <Camera className="w-4 h-4" /> Step 1 / 产品入库
@@ -157,29 +160,30 @@ const App: React.FC = () => {
                   <img src={sourceImage} className="w-full h-full object-cover" />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                    <Upload className="w-8 h-8 text-orange-400 mb-2" />
-                    <p className="text-sm font-black">导入产品原图</p>
+                    <Upload className="w-8 h-8 text-orange-400 mb-2 group-hover:scale-110 transition-transform" />
+                    <p className="text-sm font-black text-slate-900">导入产品原图</p>
+                    <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold">高清无损原素材</p>
                   </div>
                 )}
               </div>
             </div>
 
             {analysis && (
-              <div className="space-y-6">
+              <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
                 <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100">
-                  <p className="text-[10px] font-black text-orange-600 uppercase mb-1">AI 识别：{analysis.productType}</p>
+                  <p className="text-[10px] font-black text-orange-600 uppercase mb-1">AI 深度分析：{analysis.productType}</p>
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {analysis.sellingPoints.slice(0, 2).map((s, i) => (
-                      <span key={i} className="text-[9px] px-2 py-0.5 bg-white rounded-full text-slate-500 font-bold">{s}</span>
+                    {analysis.sellingPoints.slice(0, 3).map((s, i) => (
+                      <span key={i} className="text-[9px] px-2 py-0.5 bg-white rounded-full text-slate-500 font-bold border border-orange-50/50">{s}</span>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest mb-4">视觉基调</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-4 text-slate-400">视觉基调设定</p>
                   <div className="grid grid-cols-2 gap-2">
                     {STYLE_CONFIGS.map(style => (
-                      <button key={style.id} onClick={() => setSelectedStyle(style.id)} className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${selectedStyle === style.id ? 'border-orange-500 bg-orange-50 text-orange-900 ring-2 ring-orange-100' : 'border-slate-100 bg-slate-50/50 text-slate-500 hover:bg-slate-50'}`}>
+                      <button key={style.id} onClick={() => setSelectedStyle(style.id)} className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${selectedStyle === style.id ? 'border-orange-500 bg-orange-50 text-orange-900 ring-2 ring-orange-100 shadow-sm' : 'border-slate-100 bg-slate-50/50 text-slate-500 hover:bg-slate-50'}`}>
                         <span className="text-lg">{style.icon}</span>
                         <span className="text-[10px] font-black">{style.name}</span>
                       </button>
@@ -189,7 +193,8 @@ const App: React.FC = () => {
 
                 {step === 'upload' && (
                   <button onClick={() => startPreview()} disabled={isProcessing} className="w-full bg-orange-500 text-white h-16 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-orange-600 shadow-xl shadow-orange-100 transition-all flex items-center justify-center gap-3">
-                    <Sparkles className="w-5 h-5" /> 生成主图预览
+                    {isProcessing ? <RefreshCw className="animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                    生成主图预览
                   </button>
                 )}
               </div>
@@ -197,43 +202,48 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* 右侧展示区 */}
+        {/* 主展示区 */}
         <main className="col-span-12 lg:col-span-8">
           <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 min-h-[800px] overflow-hidden flex flex-col relative">
-            {/* 加载中动画 */}
+            
+            {/* 加载遮罩 */}
             {isProcessing && (
               <div className="absolute inset-0 z-[60] bg-white/95 backdrop-blur-md flex flex-col items-center justify-center">
                 <div className="relative mb-8">
-                  <div className="w-20 h-20 border-4 border-orange-100 border-t-orange-500 rounded-full animate-spin"></div>
-                  <Bot className="absolute inset-0 m-auto w-8 h-8 text-orange-500" />
+                  <div className="w-24 h-24 border-4 border-orange-100 border-t-orange-500 rounded-full animate-spin"></div>
+                  <Bot className="absolute inset-0 m-auto w-10 h-10 text-orange-500 animate-pulse" />
                 </div>
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight animate-bounce">{LOADING_MESSAGES[loadingTextIndex]}</h3>
-                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.3em] mt-4">深度重构进行中 · 请稍候</p>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight animate-bounce px-10 text-center">{LOADING_MESSAGES[loadingTextIndex]}</h3>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.3em] mt-4">正在进行高精度重构 · 请稍候</p>
               </div>
             )}
 
             <div className="flex-1 p-10 overflow-y-auto">
               {!sourceImage && (
                 <div className="h-full flex flex-col items-center justify-center text-center py-20">
-                  <ImageIcon className="w-16 h-16 text-slate-100 mb-6" />
-                  <h2 className="text-2xl font-black text-slate-900 mb-2">AI 视觉影棚已就绪</h2>
-                  <p className="text-slate-400 text-sm max-w-sm">上传产品图，AI 导演将为您量身定制全套电商视觉资产。</p>
+                  <div className="w-24 h-24 bg-slate-50 rounded-[40px] flex items-center justify-center mb-8 rotate-12 shadow-inner border border-slate-100">
+                    <ImageIcon className="w-10 h-10 text-slate-200" />
+                  </div>
+                  <h2 className="text-3xl font-black text-slate-900 mb-3 tracking-tight">AI 视觉影棚已就绪</h2>
+                  <p className="text-slate-400 text-sm max-w-sm leading-relaxed">上传产品图，AI 摄影师将自动为您量身定制全套商业视觉资产。</p>
                 </div>
               )}
 
               {step === 'preview' && previewUrl && (
                 <div className="space-y-10 animate-in fade-in duration-700">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">预览重构结果</h3>
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4" /> 视觉导演预览
+                    </h3>
                     <div className="flex gap-4">
                       <button onClick={startFullSuite} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all flex items-center gap-2 shadow-xl shadow-slate-200">
                         <LayoutGrid className="w-4 h-4" /> 生成全套资产
                       </button>
                       {analysis?.isApparel && (
-                        <div className="flex items-center bg-purple-50 p-1 rounded-2xl border border-purple-100 gap-2">
-                           <button onClick={() => setModelShowFace(!modelShowFace)} className="p-2 text-purple-600 hover:bg-white rounded-xl transition-all flex items-center gap-2">
+                        <div className="flex items-center bg-purple-50 p-1 rounded-2xl border border-purple-100 gap-1">
+                           <button onClick={() => setModelShowFace(!modelShowFace)} className="px-3 py-2 text-purple-600 hover:bg-white rounded-xl transition-all flex items-center gap-2">
                              {modelShowFace ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                             <span className="text-[10px] font-black">{modelShowFace ? "露脸模式" : "无头模式"}</span>
+                             <span className="text-[10px] font-black">{modelShowFace ? "露脸" : "无头"}</span>
                            </button>
                            <button onClick={startModelTryOn} className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all flex items-center gap-2 shadow-xl shadow-purple-100">
                               <User className="w-4 h-4" /> AI 试穿
@@ -244,25 +254,27 @@ const App: React.FC = () => {
                   </div>
                   
                   <div className="relative group max-w-xl mx-auto">
-                    <img src={previewUrl} className="w-full rounded-[32px] shadow-2xl border border-slate-100" />
-                    <button onClick={() => {const l=document.createElement('a'); l.href=previewUrl; l.download='preview.png'; l.click();}} className="absolute top-4 right-4 p-3 bg-white/90 backdrop-blur rounded-xl opacity-0 group-hover:opacity-100 transition-all shadow-xl">
-                      <Download className="w-5 h-5" />
+                    <img src={previewUrl} className="w-full rounded-[40px] shadow-2xl border border-slate-100 ring-1 ring-slate-200/50" />
+                    <button onClick={() => {const l=document.createElement('a'); l.href=previewUrl; l.download='preview.png'; l.click();}} className="absolute top-6 right-6 p-4 bg-white/90 backdrop-blur rounded-2xl opacity-0 group-hover:opacity-100 transition-all shadow-xl hover:scale-110">
+                      <Download className="w-6 h-6 text-slate-900" />
                     </button>
                   </div>
 
                   {/* 微调控制台 */}
-                  <div className="bg-slate-50/50 rounded-[32px] p-8 border border-slate-100">
+                  <div className="bg-slate-50/50 rounded-[40px] p-8 border border-slate-100">
                     <div className="flex items-center justify-between mb-6">
                        <div className="flex items-center gap-3">
-                        <Bot className="w-5 h-5 text-orange-500" />
-                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest">视觉导演微调中心</p>
+                        <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                          <Bot className="w-4 h-4 text-orange-600" />
+                        </div>
+                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest">导演微调中心</p>
                       </div>
-                      <button onClick={surpriseMode} className="text-[10px] font-black text-orange-500 hover:underline uppercase tracking-widest">试试惊喜模式 ✨</button>
+                      <button onClick={surpriseMode} className="text-[10px] font-black text-orange-500 hover:text-orange-600 uppercase tracking-widest flex items-center gap-1">试试惊喜模式 ✨</button>
                     </div>
                     
                     <div className="flex flex-wrap gap-2 mb-6">
-                      {["更亮一些", "换成大理石背景", "自然窗光", "加点倒影", "极简氛围"].map(tag => (
-                        <button key={tag} onClick={() => {setChatInput(tag); startPreview(tag);}} className="px-4 py-2 bg-white rounded-full text-[10px] font-bold text-slate-500 border border-slate-200 hover:border-orange-300 hover:text-orange-500 transition-all">
+                      {["更亮一些", "换成大理石背景", "自然午后窗光", "增加倒影质感", "极致简约风"].map(tag => (
+                        <button key={tag} onClick={() => {setChatInput(tag); startPreview(tag);}} className="px-5 py-2.5 bg-white rounded-full text-[10px] font-bold text-slate-500 border border-slate-200 hover:border-orange-300 hover:text-orange-500 transition-all shadow-sm">
                           + {tag}
                         </button>
                       ))}
@@ -273,10 +285,10 @@ const App: React.FC = () => {
                         type="text" 
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        placeholder="输入微调指令..."
+                        placeholder="输入微调指令，例如：'把背景换成海边'..."
                         className="w-full h-16 bg-white border border-slate-200 rounded-2xl px-6 text-sm focus:outline-none focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm pr-20"
                       />
-                      <button onClick={() => {if(chatInput.trim()){ setChatMessages([...chatMessages, {role:'user', text:chatInput}]); startPreview(chatInput); setChatInput(""); }}} disabled={isProcessing} className="absolute right-3 top-3 w-10 h-10 bg-orange-500 text-white rounded-xl flex items-center justify-center hover:bg-orange-600 transition-all shadow-lg">
+                      <button onClick={() => {if(chatInput.trim()){ startPreview(chatInput); setChatInput(""); }}} disabled={isProcessing} className="absolute right-3 top-3 w-10 h-10 bg-orange-500 text-white rounded-xl flex items-center justify-center hover:bg-orange-600 transition-all shadow-lg shadow-orange-200">
                         <Send className="w-4 h-4" />
                       </button>
                     </div>
@@ -286,37 +298,42 @@ const App: React.FC = () => {
 
               {step === 'suite' && (
                 <div className="space-y-12 animate-in slide-in-from-bottom duration-700">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-2xl font-black tracking-tight">全渠道资产包</h3>
-                    <button onClick={() => setStep('preview')} className="text-[11px] font-black text-slate-400 uppercase tracking-widest hover:text-orange-500 transition-colors">
-                      ← 返回微调
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-6">
+                    <h3 className="text-2xl font-black tracking-tight text-slate-900">全渠道营销资产包</h3>
+                    <button onClick={() => setStep('preview')} className="text-[11px] font-black text-slate-400 uppercase tracking-widest hover:text-orange-500 transition-colors flex items-center gap-2">
+                      <RefreshCw className="w-3 h-3" /> 返回调整预览
                     </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {suiteResults.map((item, idx) => (
-                      <div key={idx} className="group relative bg-slate-50 rounded-[40px] p-2 border border-slate-100 overflow-hidden">
-                        <img src={item.url} className={`w-full ${item.aspectRatio === '3:4' ? 'aspect-[3/4]' : 'aspect-square'} object-cover rounded-[34px] group-hover:scale-[1.02] transition-transform duration-500 shadow-sm`} />
-                        <div className="p-6">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="px-3 py-1 bg-white rounded-full text-[9px] font-black text-slate-900 border border-slate-200">{item.platformName}</span>
-                            <button onClick={() => {const l=document.createElement('a'); l.href=item.url; l.download=`${item.platformName}.png`; l.click();}} className="text-slate-400 hover:text-slate-900 transition-colors"><Download className="w-4 h-4" /></button>
+                      <div key={idx} className="group relative bg-slate-50/50 rounded-[44px] p-2 border border-slate-100 overflow-hidden hover:shadow-2xl hover:shadow-slate-200/50 transition-all duration-500">
+                        <img src={item.url} className={`w-full ${item.aspectRatio === '3:4' ? 'aspect-[3/4]' : 'aspect-square'} object-cover rounded-[38px] group-hover:scale-[1.02] transition-transform duration-700 shadow-sm`} />
+                        <div className="p-8">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="px-4 py-1.5 bg-white rounded-full text-[10px] font-black text-slate-900 border border-slate-200 shadow-sm">{item.platformName}</span>
+                            <button onClick={() => {const l=document.createElement('a'); l.href=item.url; l.download=`${item.platformName}.png`; l.click();}} className="w-10 h-10 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-orange-500 hover:shadow-lg transition-all"><Download className="w-5 h-5" /></button>
                           </div>
-                          <p className="text-[10px] font-medium text-slate-500">{item.description}</p>
+                          <p className="text-[11px] font-bold text-slate-400 leading-relaxed">{item.description}</p>
                         </div>
                       </div>
                     ))}
                     
                     {modelImage && (
-                      <div className="md:col-span-2 group relative bg-gradient-to-br from-purple-50 to-indigo-50 rounded-[40px] p-4 border border-purple-100">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                          <img src={modelImage} className="w-full aspect-[3/4] object-cover rounded-[34px] shadow-2xl" />
-                          <div className="p-4 space-y-6">
-                            <span className="px-4 py-1.5 bg-purple-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest">AI 模特实穿特写</span>
-                            <h4 className="text-3xl font-black tracking-tight">真实感肤质重绘</h4>
-                            <p className="text-sm text-slate-500 leading-relaxed">基于最新的高精度皮肤质感网络生成，一键实现商业级真人穿戴效果展示。</p>
-                            <button onClick={() => {const l=document.createElement('a'); l.href=modelImage; l.download='model.png'; l.click();}} className="w-full py-4 bg-white text-slate-900 border border-purple-200 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all shadow-xl shadow-purple-100 flex items-center justify-center gap-3">
-                              <Download className="w-5 h-5" /> 下载高清模特图
+                      <div className="md:col-span-2 group relative bg-gradient-to-br from-purple-50/50 to-indigo-50/50 rounded-[50px] p-4 border border-purple-100/50 shadow-inner">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center p-6">
+                          <div className="relative group/img">
+                            <img src={modelImage} className="w-full aspect-[3/4] object-cover rounded-[40px] shadow-2xl ring-4 ring-white" />
+                            <div className="absolute inset-0 rounded-[40px] bg-purple-600/0 group-hover/img:bg-purple-600/10 transition-colors pointer-events-none"></div>
+                          </div>
+                          <div className="space-y-8">
+                            <div className="space-y-4">
+                              <span className="px-5 py-2 bg-purple-600 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-purple-200">AI 虚拟模特 · 特写</span>
+                              <h4 className="text-4xl font-black tracking-tight text-slate-900 leading-tight">写实级皮肤<br/>质感重绘</h4>
+                              <p className="text-sm text-slate-500 font-medium leading-relaxed">基于 8K 级皮肤纹理网络，一键实现商业级真人穿戴展示。完美解决外籍模特昂贵、档期难约的行业痛点。</p>
+                            </div>
+                            <button onClick={() => {const l=document.createElement('a'); l.href=modelImage; l.download='ai-model.png'; l.click();}} className="w-full py-5 bg-white text-slate-900 border border-purple-100 rounded-[24px] font-black text-xs uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all shadow-xl shadow-purple-100/50 flex items-center justify-center gap-3 active:scale-[0.98]">
+                              <Download className="w-5 h-5" /> 下载高清模特资产
                             </button>
                           </div>
                         </div>
@@ -327,25 +344,33 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <div className="px-10 py-6 border-t border-slate-50 flex items-center justify-between bg-slate-50/20 text-[9px] font-black text-slate-300 uppercase tracking-widest">
-              <span>Commerce Suite Engine v2.5.2</span>
-              <div className="flex gap-4">
-                <button className="hover:text-slate-900 transition-colors">安全隐私</button>
-                <button className="hover:text-slate-900 transition-colors">联系技术支持</button>
+            {/* 页脚 */}
+            <div className="px-10 py-8 border-t border-slate-50 flex items-center justify-between bg-slate-50/20 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              <div className="flex items-center gap-4">
+                <span>Suite Engine v2.5.2</span>
+                <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                <span className="text-slate-200">商业级视觉重构</span>
+              </div>
+              <div className="flex gap-6">
+                <button className="hover:text-slate-900 transition-colors">隐私保护</button>
+                <button className="hover:text-slate-900 transition-colors">技术支持</button>
               </div>
             </div>
           </div>
         </main>
       </div>
 
+      {/* 错误浮窗 */}
       {error && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white text-slate-900 px-8 py-6 rounded-[32px] shadow-2xl flex items-center gap-8 animate-in slide-in-from-bottom z-[100] border border-orange-100">
-          <ShieldAlert className="w-6 h-6 text-orange-500" />
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white text-slate-900 px-10 py-7 rounded-[36px] shadow-2xl flex items-center gap-8 animate-in slide-in-from-bottom z-[100] border border-orange-100 min-w-[500px]">
+          <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center">
+            <ShieldAlert className="w-7 h-7 text-orange-500" />
+          </div>
           <div className="flex-1">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{error.title}</p>
-            <p className="text-sm font-black text-slate-800">{error.msg}</p>
+            <p className="text-base font-black text-slate-800 leading-tight">{error.msg}</p>
           </div>
-          <button onClick={() => setError(null)} className="p-2 text-slate-300 hover:text-slate-900 transition-all"><X /></button>
+          <button onClick={() => setError(null)} className="p-3 text-slate-300 hover:text-slate-900 transition-all hover:bg-slate-50 rounded-xl"><X /></button>
         </div>
       )}
     </div>

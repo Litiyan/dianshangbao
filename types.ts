@@ -57,4 +57,3 @@ export interface GeneratedSuite {
   items: GeneratedImage[];
   modelImage?: string;
 }
-

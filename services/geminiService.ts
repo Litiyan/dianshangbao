@@ -31,7 +31,7 @@ export async function analyzeProduct(base64Image: string): Promise<MarketAnalysi
   const modelName = 'gemini-2.0-flash'; 
   const systemPrompt = `你现在是电商助手“电商宝”的首席视觉专家。
   分析此图，输出 JSON 格式。
-  必须判断 isApparel (如果产品是衣服、裤子、鞋、包、配饰，则为 true)。
+  必须准确判断 isApparel (如果产品是衣服、裤子、鞋、包、帽子、配饰，则为 true)。
   JSON 结构: { productType, targetAudience, sellingPoints[], suggestedPrompt, recommendedCategories[], marketingCopy: {title, shortDesc, tags[]}, isApparel }`;
 
   const payload = {
@@ -58,11 +58,11 @@ export async function generatePreview(
   const modelName = 'gemini-2.5-flash-image';
   const prompt = `
     ROLE: Professional Commercial Photographer.
-    SCENE: High-end studio background.
+    SCENE: Clean, bright studio with high-end commercial lighting.
     STYLE: ${style}.
     PRODUCT: ${analysis.productType}, ${analysis.sellingPoints.join(', ')}.
     USER_REFINEMENT: ${userTweaks}
-    MANDATE: 100% background removal and environment re-rendering. 8k resolution, cinematic lighting.
+    MANDATE: 100% background removal and re-render. 8k, realistic shadows, product centered.
   `;
 
   const payload = {
@@ -73,12 +73,12 @@ export async function generatePreview(
 
   const result = await callGeminiBff(payload);
   const imgData = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
-  if (!imgData) throw new Error("预览生成失败");
+  if (!imgData) throw new Error("预览图生成失败");
   return `data:image/png;base64,${imgData}`;
 }
 
 /**
- * 3. 生成全套专家级图像 (针对不同平台参数特化)
+ * 3. 生成全套专家级资产 (多渠道差异化)
  */
 export async function generateMarketingSuite(
   base64Image: string,
@@ -89,31 +89,31 @@ export async function generateMarketingSuite(
   const suiteConfigs = [
     {
       id: ImageCategory.DISPLAY,
-      platform: "淘宝/京东",
+      platform: "淘宝/京东主图",
       ratio: "1:1",
-      desc: "高点击率主图：50mm 黄金焦段，极简背景，主体高亮。",
-      prompt: "Persona: Professional 4A Ad Photographer. Setup: Studio lighting, 50mm lens, center composition, high CTR, clean soft shadows, sharp focus on product."
+      desc: "高点击率主图：50mm 黄金焦段，极简高光，主体高亮。",
+      prompt: "Setup: Professional 50mm lens photography, high CTR e-commerce style, center composition, soft shadows, sharp focus, studio lighting."
     },
     {
       id: ImageCategory.SOCIAL,
-      platform: "小红书",
+      platform: "小红书氛围图",
       ratio: "3:4",
-      desc: "生活种草氛围：35mm 人文焦段，自然窗光，生活化场景。",
-      prompt: "Persona: Lifestyle Blogger Photographer. Setup: Natural window lighting, 35mm lens, depth of field bokeh, warm cozy vibe, product placed in a realistic modern interior."
+      desc: "社区种草：35mm 人文焦段，自然窗光，温馨生活化场景。",
+      prompt: "Setup: 35mm lens lifestyle photography, natural window lighting, beautiful bokeh, cozy atmosphere, Instagram/XHS aesthetic."
     },
     {
       id: ImageCategory.DETAIL,
-      platform: "详情页",
+      platform: "详情页细节",
       ratio: "1:1",
       desc: "细节特写：100mm 微距，展现极高清材质纹理。",
-      prompt: "Persona: Product Texture Expert. Setup: Macro lens 100mm, f/8, extreme close-up, sharpest focus on materials and craftsmanship, professional retouching."
+      prompt: "Setup: 100mm Macro lens, extreme close-up, f/8, ultra-sharp focus on texture and fabric, professional retouching."
     },
     {
       id: ImageCategory.WHITEBG,
-      platform: "平台白底",
+      platform: "合规白底图",
       ratio: "1:1",
-      desc: "官方合规白底：100% 纯白背景，符合所有平台规范。",
-      prompt: "Setup: Pure white background #FFFFFF, no scenery, soft drop shadow only, ultra-clean product photography, standard e-commerce cutout."
+      desc: "平台白底：100% 纯白 (#FFFFFF)，专业柔光，符合平台规范。",
+      prompt: "Setup: Pure white background #FFFFFF, soft drop shadow, no scenery, ultra-clean product cutout style."
     }
   ];
 
@@ -122,10 +122,10 @@ export async function generateMarketingSuite(
   const tasks = suiteConfigs.map(async (cfg) => {
     const finalPrompt = `
       ${cfg.prompt}
-      PRODUCT_TYPE: ${analysis.productType}
-      VISUAL_STYLE: ${style}
-      USER_REFINEMENT: ${userTweaks}
-      QUALITY: 8k resolution, Masterpiece, commercial photography.
+      PRODUCT: ${analysis.productType}
+      STYLE: ${style}
+      TWEAKS: ${userTweaks}
+      MANDATE: 100% background replacement, 8k resolution, commercial grade.
     `;
 
     const payload = {
@@ -149,7 +149,7 @@ export async function generateMarketingSuite(
 }
 
 /**
- * 4. 生成 AI 模特试穿 (服饰类特化)
+ * 4. 生成 AI 模特试穿 (服饰类专供)
  */
 export async function generateModelImage(
   base64Image: string,
@@ -157,15 +157,14 @@ export async function generateModelImage(
   showFace: boolean = true
 ): Promise<string> {
   const modelName = 'gemini-2.5-flash-image';
-  const persona = `You are a high-end fashion magazine photographer.`;
-  const subject = `Realistic Asian model wearing the ${analysis.productType}. ${showFace ? 'Beautiful confident face' : 'Crop above the nose, focus on outfit'}.`;
+  const faceOption = showFace ? "Beautiful confident face" : "Crop above mouth, focus on the outfit body";
   
   const prompt = `
-    ${persona}
-    SUBJECT: ${subject}
-    SCENE: Minimalist modern fashion studio.
-    TEXTURE: Realistic skin texture, realistic human anatomy, professional fashion lighting.
-    MANDATE: Photorealistic, 8k, haute couture magazine style.
+    ROLE: High-end Fashion Magazine Photographer.
+    SUBJECT: Realistic Asian fashion model wearing this ${analysis.productType}. ${faceOption}.
+    SCENE: Minimalist modern boutique or professional fashion studio.
+    TEXTURE: Realistic skin texture, realistic human anatomy, professional soft lighting.
+    MANDATE: 8k photorealistic, fashion catalogue style.
   `;
 
   const payload = {
@@ -176,6 +175,6 @@ export async function generateModelImage(
 
   const result = await callGeminiBff(payload);
   const imgData = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
-  if (!imgData) throw new Error("模特试穿生成失败");
+  if (!imgData) throw new Error("模特图生成失败");
   return `data:image/png;base64,${imgData}`;
 }
