@@ -1,37 +1,18 @@
 
-export enum PlatformType {
-  TAOBAO = 'Taobao',
-  JD = 'JD.com',
-  AMAZON = 'Amazon',
-  XHS = '小红书'
+export enum ScenarioType {
+  CROSS_BORDER_LOCAL = 'CROSS_BORDER_LOCAL',     // 跨境电商“本土化”需求
+  TEXT_EDIT_TRANSLATE = 'TEXT_EDIT_TRANSLATE',   // 图片文字自动翻译与擦除
+  MODEL_REPLACEMENT = 'MODEL_REPLACEMENT',       // 多肤色/多国籍模特替换
+  MOMENTS_POSTER = 'MOMENTS_POSTER',             // 朋友圈营销海报 (9:16)
+  PLATFORM_MAIN_DETAIL = 'PLATFORM_MAIN_DETAIL', // 淘宝京东主图/详情图
+  BUYER_SHOW = 'BUYER_SHOW',                     // 买家秀/晒单图生成
+  LIVE_OVERLAY = 'LIVE_OVERLAY',                 // 直播间贴片/遮罩层
+  LIVE_GREEN_SCREEN = 'LIVE_GREEN_SCREEN'        // 绿幕直播背景图
 }
 
-export enum ImageStyle {
-  MINIMALIST = '简约北欧',
-  CYBERPUNK = '赛博朋克',
-  STUDIO = '专业摄影棚',
-  COZY = '温馨居家',
-  OUTDOOR = '户外自然',
-  LUXURY = '奢华质感',
-  INS = '网红奶油风',
-  RETRO = '港风复古'
-}
-
-export enum ImageCategory {
-  DISPLAY = 'DISPLAY',    // 标准展示
-  POSTER = 'POSTER',      // 营销海报
-  MODEL = 'MODEL',        // 虚拟模特
-  DETAIL = 'DETAIL',      // 细节特写
-  SOCIAL = 'SOCIAL',      // 社交种草
-  WHITEBG = 'WHITEBG',    // 白底证件
-  GIFT = 'GIFT',          // 礼赠场景
-  LIFESTYLE = 'LIFESTYLE' // 环境融入
-}
-
-export interface MarketingCopy {
+export interface TextConfig {
   title: string;
-  shortDesc: string;
-  tags: string[];
+  detail: string;
 }
 
 export interface MarketAnalysis {
@@ -39,21 +20,13 @@ export interface MarketAnalysis {
   targetAudience: string;
   sellingPoints: string[];
   suggestedPrompt: string;
-  recommendedCategories: ImageCategory[];
-  marketingCopy: MarketingCopy;
-  isApparel: boolean; // 是否为服饰类（触发 AI 模特入口）
+  isApparel: boolean;
 }
 
 export interface GeneratedImage {
   url: string;
-  category: ImageCategory;
+  scenario: ScenarioType;
   platformName: string;
   description: string;
-  aspectRatio: string;
-}
-
-export interface GeneratedSuite {
-  preview: string;
-  items: GeneratedImage[];
-  modelImage?: string;
+  aspectRatio: '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
 }

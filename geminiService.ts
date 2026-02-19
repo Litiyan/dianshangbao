@@ -1,12 +1,10 @@
 
-import { MarketAnalysis, ImageStyle, ImageCategory } from "../types";
+import { MarketAnalysis, ScenarioType, TextConfig } from "../types";
 
-// 定义后端接口地址（BFF 模式）
 const API_ENDPOINT = '/api/gemini';
 
 /**
- * 通用的后端调用函数 (BFF模式)
- * 负责将请求转发给 Cloudflare Functions，绕过浏览器端的网络限制
+ * 统一 BFF 调用接口
  */
 async function callGeminiBff(payload: any) {
   try {
@@ -15,159 +13,117 @@ async function callGeminiBff(payload: any) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-
     const data = await response.json().catch(() => ({ error: "RESPONSE_NOT_JSON" }));
-
     if (!response.ok) {
-      // 针对配额不足或权限受限的特定处理
-      if (response.status === 429 || (data.error && (data.error === "RESOURCE_EXHAUSTED" || data.error.status === "RESOURCE_EXHAUSTED"))) {
-        const msg = data.message || (data.error && data.error.message) || "";
-        if (msg.includes("limit: 0")) {
-          throw new Error("检测到模型配额受限 (limit: 0)。请确保已在 Google AI Studio 绑定结算账户(Billing)，且代码已指定正式版模型 'gemini-2.5-flash-image'。");
-        }
-        throw new Error("API 请求过于频繁或配额耗尽，请稍后再试。");
-      }
-      
-      throw new Error(data.message || (data.error && data.error.message) || `API 请求失败: ${response.status}`);
+      throw new Error(data.message || (data.error && data.error.message) || `请求失败: ${response.status}`);
     }
-
     return data;
   } catch (error: any) {
     console.error("BFF 调用错误:", error);
-    if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      throw new Error("网络连接失败。请确保您的 Cloudflare Pages 后台 API 路由正常工作。");
-    }
     throw error;
   }
 }
 
 /**
- * 1. 分析产品并生成营销建议
- * 使用 gemini-2.0-flash 进行稳健的文本分析
+ * 1. 深度分析多图产品 DNA (使用 Gemini 3 Flash)
  */
-export async function analyzeProduct(base64Image: string): Promise<MarketAnalysis> {
-  const modelName = 'gemini-2.0-flash'; 
+export async function analyzeProduct(base64Images: string[]): Promise<MarketAnalysis> {
+  const modelName = 'gemini-3-flash-preview'; 
+  const imageParts = base64Images.map(img => ({
+    inlineData: { data: img, mimeType: 'image/png' }
+  }));
   
-  const systemPrompt = `你现在是电商助手“电商宝”的首席视觉专家。请分析此图。
-  必须严格输出纯 JSON 格式。包含：
-  - productType (商品类型)
-  - targetAudience (目标人群)
-  - sellingPoints (卖点数组)
-  - suggestedPrompt (生图提示词建议)
-  - recommendedCategories (推荐分类数组)
-  - marketingCopy (营销文案对象: title, shortDesc, tags)`;
+  const systemPrompt = `你是一名资深电商视觉专家和市场分析师。
+  请根据提供的【多角度】产品图片，进行深度分析并输出 JSON 格式（不要包含 markdown 标签）: 
+  { 
+    "productType": "产品名称", 
+    "targetAudience": "核心受众", 
+    "sellingPoints": ["卖点1", "卖点2"], 
+    "suggestedPrompt": "针对此产品的核心摄影描述", 
+    "isApparel": true/false 
+  }`;
 
   const payload = {
     model: modelName,
-    contents: {
-      parts: [
-        { inlineData: { data: base64Image, mimeType: 'image/png' } },
-        { text: systemPrompt }
-      ]
-    },
-    config: {
-      responseMimeType: "application/json"
-    }
-  };
-
-  try {
-    const result = await callGeminiBff(payload);
-    
-    const candidates = result.candidates || [];
-    let rawText = "";
-    if (candidates.length > 0 && candidates[0].content && candidates[0].content.parts) {
-      const textPart = candidates[0].content.parts.find((p: any) => p.text);
-      if (textPart) rawText = textPart.text;
-    } else if (result.text) {
-      rawText = result.text;
-    }
-
-    if (rawText) {
-      const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(cleanJson) as MarketAnalysis;
-    }
-    throw new Error("模型未返回有效的分析结果");
-  } catch (error) {
-    console.error("分析产品失败:", error);
-    throw error;
-  }
-}
-
-/**
- * 2. 生成产品展示图
- * (修复：强制使用正式版模型，解决 limit: 0 问题)
- */
-export async function generateProductDisplay(
-  base64Image: string,
-  style: ImageStyle,
-  category: ImageCategory,
-  aspectRatio: string,
-  marketAnalysis: MarketAnalysis,
-  fineTunePrompts: string[],
-  isUltraHD: boolean,
-  chatHistory: {role: 'user' | 'assistant', text: string}[] = []
-): Promise<string> {
-  
-  const categoryMap: Record<ImageCategory, string> = {
-    [ImageCategory.WHITEBG]: "Pure white infinity cove studio background.",
-    [ImageCategory.POSTER]: "Modern editorial poster layout with clean space.",
-    [ImageCategory.MODEL]: "Fashion lifestyle setting with soft human interaction.",
-    [ImageCategory.DETAIL]: "Macro professional photography with extreme bokeh.",
-    [ImageCategory.SOCIAL]: "Trendy Xiaohongshu aesthetic with soft warm lighting.",
-    [ImageCategory.GIFT]: "Exquisite festive gift setting with ribbons and bokeh.",
-    [ImageCategory.LIFESTYLE]: "High-end contemporary interior architecture.",
-    [ImageCategory.DISPLAY]: "Art gallery pedestal in a clean bright room."
-  };
-
-  const systemMandate = `
-    ROLE: You are "电商宝" AI Engine.
-    MANDATE: 100% RE-RENDER THE ENVIRONMENT. ERASE ORIGINAL BACKGROUND.
-    LIGHTING: Re-calculate all shadows based on the new scene.
-    QUALITY: Masterpiece, 8k, commercial product photography.
-  `;
-
-  const chatContext = chatHistory.length > 0 
-    ? `\nREFINEMENT REQUESTS:\n${chatHistory.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n')}`
-    : "";
-
-  const finalPrompt = `${systemMandate}
-    TARGET SCENE: ${categoryMap[category]}
-    VISUAL STYLE: ${style}
-    TECHNICAL: ${fineTunePrompts.join(', ')}
-    CONTEXT: ${marketAnalysis.productType}, ${marketAnalysis.sellingPoints.join(', ')}.
-    ${chatContext}
-    OUTPUT: Return the final generated image.
-  `;
-
-  // 🔴 核心修改：使用正式版模型名称，不带 preview
-  const modelName = 'gemini-2.5-flash-image'; 
-
-  const payload = {
-    model: modelName,
-    contents: {
-      parts: [
-        { inlineData: { data: base64Image, mimeType: 'image/png' } },
-        { text: finalPrompt },
-      ],
-    },
-    config: {
-      imageConfig: {
-        aspectRatio: aspectRatio as any,
-        imageSize: "1K" 
-      }
-    },
+    contents: { parts: [...imageParts, { text: systemPrompt }] },
+    config: { responseMimeType: "application/json" }
   };
 
   const result = await callGeminiBff(payload);
-  
-  const candidates = result.candidates || [];
-  if (candidates.length > 0) {
-    const parts = candidates[0].content.parts;
-    const imgPart = parts.find((p: any) => p.inlineData);
-    if (imgPart?.inlineData?.data) {
-      return `data:image/png;base64,${imgPart.inlineData.data}`;
-    }
-  }
+  let rawText = result.text || "";
+  const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+  return JSON.parse(cleanJson) as MarketAnalysis;
+}
 
-  throw new Error("模型已响应，但未包含有效的图像像素。可能是提示词被安全策略拦截。");
+/**
+ * 2. 核心场景重构引擎 (使用 Gemini 2.5 Flash Image)
+ */
+export async function generateScenarioImage(
+  base64Images: string[],
+  scenario: ScenarioType,
+  analysis: MarketAnalysis,
+  userIntent: string,
+  textConfig: TextConfig,
+  modelNationality: string = ""
+): Promise<string> {
+  const modelName = 'gemini-2.5-flash-image';
+  const imageParts = base64Images.map(img => ({
+    inlineData: { data: img, mimeType: 'image/png' }
+  }));
+
+  // 场景特化指令集
+  const scenarioPrompts: Record<ScenarioType, string> = {
+    [ScenarioType.CROSS_BORDER_LOCAL]: "Localized for global market (Amazon/Shopee). Match the aesthetic of the target region (e.g., minimalist for US, vibrant for SE Asia). Realistic background.",
+    [ScenarioType.TEXT_EDIT_TRANSLATE]: "Strictly erase all existing text from the source image. Replace with professional, translated marketing copy. High texture background.",
+    [ScenarioType.MODEL_REPLACEMENT]: `Replace original person with a ${modelNationality || 'professional'} model. High fashion skin texture and lighting. Product must be worn or held naturally.`,
+    [ScenarioType.MOMENTS_POSTER]: "9:16 vertical poster. 'Psoriasis' style (牛皮癣主图) with high impact stickers, bold discount text, and viral marketing graphic elements.",
+    [ScenarioType.PLATFORM_MAIN_DETAIL]: "1:1 ratio. Optimized for Taobao/JD. Professional studio setup, clean lighting, clear product features, and high-conversion graphic layout.",
+    [ScenarioType.BUYER_SHOW]: "Simulated amateur smartphone photography. Home lifestyle background, natural messy lighting, realistic shadows. Casual placement.",
+    [ScenarioType.LIVE_OVERLAY]: "16:9 ratio. Live streaming asset. Clear product in focus. Graphics on corners/sides. Leave center area clear for human placement.",
+    [ScenarioType.LIVE_GREEN_SCREEN]: "16:9 ratio. High-end virtual live studio. Showroom or modern interior. Soft lighting, bokeh background. Optimized for chroma keying."
+  };
+
+  const typographyInstruction = (textConfig.title || textConfig.detail) ? `
+    TYPOGRAPHY ARTWORK:
+    - Main Headline: "${textConfig.title}" (Bold, eye-catching font)
+    - Sub-detail: "${textConfig.detail}" (Clean, readable marketing text)
+    - Automatically beautify and layout these texts based on the chosen scenario.
+  ` : "No extra text overlay required.";
+
+  const finalPrompt = `
+    TASK: Reconstruct product into a ${scenario} scenario.
+    INTENT: ${userIntent}.
+    RULES: ${scenarioPrompts[scenario]}.
+    ${typographyInstruction}
+    PRODUCT FEATURES: ${analysis.sellingPoints.join(', ')}.
+    MANDATE: 8k photorealistic. Remove original background. Retain 3D product fidelity using provided multi-angle references.
+  `;
+
+  // 比例映射
+  const ratioMap: Record<ScenarioType, string> = {
+    [ScenarioType.MOMENTS_POSTER]: "9:16",
+    [ScenarioType.LIVE_OVERLAY]: "16:9",
+    [ScenarioType.LIVE_GREEN_SCREEN]: "16:9",
+    [ScenarioType.PLATFORM_MAIN_DETAIL]: "1:1",
+    [ScenarioType.CROSS_BORDER_LOCAL]: "1:1",
+    [ScenarioType.TEXT_EDIT_TRANSLATE]: "1:1",
+    [ScenarioType.MODEL_REPLACEMENT]: "3:4",
+    [ScenarioType.BUYER_SHOW]: "3:4"
+  };
+
+  const payload = {
+    model: modelName,
+    contents: { parts: [...imageParts, { text: finalPrompt }] },
+    config: { 
+      imageConfig: { 
+        aspectRatio: (ratioMap[scenario] || "1:1") as any
+      }
+    }
+  };
+
+  const result = await callGeminiBff(payload);
+  const imgData = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
+  
+  if (!imgData) throw new Error("生成失败，请检查输入素材。");
+  return `data:image/png;base64,${imgData}`;
 }

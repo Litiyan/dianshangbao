@@ -1,345 +1,320 @@
 
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Upload, Download, RefreshCw, Hand, 
-  Zap, Crown, Settings2, Send, Bot, 
-  Layers, Sun, Maximize2, CheckCircle2,
-  ShieldAlert, X, MessageSquareText
+  Upload, Download, RefreshCw, Bot, 
+  CheckCircle2, ShieldAlert, X, MessageSquareText,
+  Sparkles, Image as ImageIcon, Camera, LayoutGrid, Plus, Trash2
 } from 'lucide-react';
-import { ImageStyle, MarketAnalysis, ImageCategory } from './types';
-import { CATEGORY_CONFIGS, STYLE_CONFIGS, RATIO_OPTIONS, FINE_TUNE_TAGS, LIGHTING_DIRECTIONS } from './constants';
-import { analyzeProduct, generateProductDisplay } from './services/geminiService';
+import { ScenarioType, MarketAnalysis, TextConfig } from './types';
+import { SCENARIO_CONFIGS, MODEL_NATIONALITY } from './constants';
+import { analyzeProduct, generateScenarioImage } from './services/geminiService';
+
+const LOADING_MESSAGES = [
+  "正在读取多图立体特征...",
+  "AI 视觉导演正在构思排版...",
+  "正在渲染 8K 级商业光影...",
+  "正在为您匹配最佳本土化风格...",
+  "正在计算文字与产品的交互位置...",
+  "正在导出高保真电商素材...",
+];
 
 const App: React.FC = () => {
-  // 核心逻辑：移除 hasKey 的阻塞状态，默认直接进入应用。
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [sourceImage, setSourceImage] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<MarketAnalysis | null>(null);
+  const [step, setStep] = useState<'upload' | 'result'>('upload');
+  const [sourceImages, setSourceImages] = useState<string[]>([]);
+  const [userIntent, setUserIntent] = useState("");
+  const [textConfig, setTextConfig] = useState<TextConfig>({ title: "", detail: "" });
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioType>(ScenarioType.PLATFORM_MAIN_DETAIL);
+  const [selectedNationality, setSelectedNationality] = useState("");
   
-  // 场景配置
-  const [selectedStyle, setSelectedStyle] = useState<ImageStyle>(ImageStyle.STUDIO);
-  const [selectedCategory, setSelectedCategory] = useState<ImageCategory>(ImageCategory.SOCIAL);
-  const [selectedRatio, setSelectedRatio] = useState<string>('1:1');
-  const [selectedFineTunes, setSelectedFineTunes] = useState<string[]>([]);
-  const [selectedLighting, setSelectedLighting] = useState<string>('ambient');
-  const [isUltraHD, setIsUltraHD] = useState(false);
-
   const [isProcessing, setIsProcessing] = useState(false);
-  const [generatedResult, setGeneratedResult] = useState<string | null>(null);
-  
-  const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', text: string}[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+  const [analysis, setAnalysis] = useState<MarketAnalysis | null>(null);
+  const [resultImage, setResultImage] = useState<string | null>(null);
   const [error, setError] = useState<{title: string, msg: string} | null>(null);
-  const [networkStatus, setNetworkStatus] = useState<'stable' | 'testing'>('testing');
 
   useEffect(() => {
-    const checkNetwork = async () => {
-      try {
-        await fetch('https://generativelanguage.googleapis.com/v1/models', { mode: 'no-cors' });
-        setNetworkStatus('stable');
-      } catch (e) {
-        setNetworkStatus('testing');
-      }
-    };
-    checkNetwork();
-  }, []);
+    let interval: any;
+    if (isProcessing) {
+      interval = setInterval(() => {
+        setLoadingTextIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+      }, 2500);
+    }
+    return () => clearInterval(interval);
+  }, [isProcessing]);
 
-  useEffect(() => {
-    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []) as File[];
+    if (files.length === 0) return;
 
-  const handleAnalyze = async () => {
-    if (!sourceImage) return;
+    const readers = files.map(file => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    const results = await Promise.all(readers);
+    const newImages = [...sourceImages, ...results].slice(0, 5);
+    setSourceImages(newImages);
+    
     setIsProcessing(true);
-    setError(null);
     try {
-      const base64 = sourceImage.split(',')[1];
-      const result = await analyzeProduct(base64);
-      setAnalysis(result);
-      if (result.recommendedCategories?.length) {
-        setSelectedCategory(result.recommendedCategories[0]);
-      }
-      setStep(2);
+      const rawB64s = newImages.map(r => r.split(',')[1]);
+      const res = await analyzeProduct(rawB64s);
+      setAnalysis(res);
     } catch (err: any) {
-      setError({ title: "分析失败", msg: err.message || "无法识别商品特征，请更换图片重试。" });
+      console.error("分析失败:", err);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleGenerate = async (refinementText?: string) => {
-    if (!sourceImage || !analysis) return;
+  const removeImage = (index: number) => {
+    setSourceImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const startGeneration = async () => {
+    if (sourceImages.length === 0) {
+      setError({ title: "缺少素材", msg: "请至少上传一张产品原图" });
+      return;
+    }
     setIsProcessing(true);
-    setError(null);
-    
-    const updatedHistory = refinementText 
-      ? [...chatMessages, { role: 'user' as const, text: refinementText }]
-      : chatMessages;
-    
-    if (refinementText) setChatMessages(updatedHistory);
-
+    setStep('result');
     try {
-      const base64 = sourceImage.split(',')[1];
-      const selectedFineTunePrompts = FINE_TUNE_TAGS
-        .filter(t => selectedFineTunes.includes(t.id))
-        .map(t => t.prompt);
-      
-      const lightingPrompt = LIGHTING_DIRECTIONS.find(l => l.id === selectedLighting)?.prompt || '';
-
-      const result = await generateProductDisplay(
-        base64, selectedStyle, selectedCategory, selectedRatio, 
-        analysis, [...selectedFineTunePrompts, lightingPrompt], 
-        isUltraHD, updatedHistory
+      const rawB64s = sourceImages.map(img => img.split(',')[1]);
+      const res = await generateScenarioImage(
+        rawB64s, 
+        selectedScenario, 
+        analysis || { productType: "Product", targetAudience: "General", sellingPoints: [], suggestedPrompt: "", isApparel: false }, 
+        userIntent, 
+        textConfig,
+        selectedNationality
       );
-      
-      setGeneratedResult(result);
-      if (refinementText) {
-        setChatMessages(prev => [...prev, { role: 'assistant', text: "暖心小手套已根据您的要求微调了视觉空间。" }]);
-      }
-      setStep(3);
+      setResultImage(res);
     } catch (err: any) {
-      setError({ title: "生成异常", msg: err.message || "背景重构失败，请检查网络或刷新页面。" });
+      setError({ title: "生成失败", msg: err.message });
+      setStep('upload');
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
-      {/* 极简导航 */}
-      <nav className="h-20 bg-white/80 backdrop-blur-xl sticky top-0 z-50 px-8 flex items-center justify-between border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg rotate-12">
-            <Hand className="text-white w-5 h-5 fill-white" />
+    <div className="min-h-screen bg-[#FDFCFB] text-slate-900 pb-20 font-sans selection:bg-orange-100">
+      <nav className="h-20 bg-white/70 backdrop-blur-2xl sticky top-0 z-[100] px-8 flex items-center justify-between border-b border-slate-100">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.location.reload()}>
+          <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg">
+            <Sparkles className="text-white w-5 h-5" />
           </div>
-          <h1 className="text-lg font-black tracking-tight">电商宝 <span className="text-orange-500 font-medium">Workstation</span></h1>
-        </div>
-
-        <div className="hidden lg:flex items-center gap-6">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className="flex items-center gap-3">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${
-                step >= s ? 'bg-orange-500 text-white shadow-lg' : 'bg-slate-100 text-slate-400'
-              }`}>
-                {step > s ? <CheckCircle2 className="w-5 h-5" /> : s}
-              </div>
-              <p className={`text-[10px] font-black uppercase tracking-widest ${step >= s ? 'text-slate-900' : 'text-slate-300'}`}>
-                {s === 1 ? '上传' : s === 2 ? '配置' : '成品'}
-              </p>
-              {s < 3 && <div className={`w-8 h-0.5 rounded-full ${step > s ? 'bg-orange-500' : 'bg-slate-100'}`} />}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className={`px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest flex items-center gap-2 ${
-            networkStatus === 'stable' ? 'border-emerald-100 bg-emerald-50 text-emerald-600' : 'border-amber-100 bg-amber-50 text-amber-600'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${networkStatus === 'stable' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
-            {networkStatus === 'stable' ? '链路通畅' : '建立连接中'}
-          </div>
-          <button className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all flex items-center gap-2">
-            <Crown className="w-4 h-4 text-amber-400" /> 专业版
-          </button>
+          <h1 className="text-xl font-black tracking-tight">电商宝 <span className="text-orange-500 font-medium">3.0 Pro</span></h1>
         </div>
       </nav>
 
-      <div className="max-w-[1600px] mx-auto p-8 grid grid-cols-12 gap-8">
-        {/* 控制侧栏 */}
-        <aside className="col-span-12 lg:col-span-4 space-y-6">
-          {/* 上传卡片 */}
-          <div className={`bg-white rounded-[32px] p-6 shadow-sm border transition-all ${step === 1 ? 'border-orange-500 ring-4 ring-orange-50' : 'border-slate-100'}`}>
-            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Upload className="w-4 h-4" /> 01 / 产品图片
-            </h2>
-            <div className="aspect-video rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 relative overflow-hidden group cursor-pointer hover:border-orange-400 transition-all">
-              <input type="file" accept="image/*" onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onloadend = () => { setSourceImage(reader.result as string); setStep(1); setAnalysis(null); setGeneratedResult(null); };
-                  reader.readAsDataURL(file);
-                }
-              }} className="absolute inset-0 opacity-0 z-10 cursor-pointer" />
-              {sourceImage ? (
-                <img src={sourceImage} className="w-full h-full object-cover" />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                  <Upload className="w-8 h-8 text-orange-500 mb-3" />
-                  <p className="text-xs font-black text-slate-900">导入产品原图</p>
-                  <p className="text-[9px] text-slate-400 mt-1 uppercase tracking-widest font-bold">PNG / JPG</p>
-                </div>
-              )}
-            </div>
-            {sourceImage && step === 1 && (
-              <button onClick={handleAnalyze} disabled={isProcessing} className="w-full mt-6 bg-orange-500 text-white h-14 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-orange-600 shadow-xl shadow-orange-100 transition-all flex items-center justify-center gap-3">
-                {isProcessing ? <RefreshCw className="animate-spin w-5 h-5" /> : '智能分析定调'}
-              </button>
-            )}
-          </div>
-
-          {/* 配置卡片 */}
-          {analysis && (
-            <div className={`bg-white rounded-[32px] p-6 shadow-sm border transition-all ${step === 2 ? 'border-orange-500 ring-4 ring-orange-50' : 'border-slate-100'} space-y-8 animate-in slide-in-from-bottom`}>
-              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <Settings2 className="w-4 h-4" /> 02 / 视觉配置
-              </h2>
-
-              <section>
-                <p className="text-[9px] font-black text-slate-900 uppercase tracking-widest mb-3">输出比例</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {RATIO_OPTIONS.map(r => (
-                    <button key={r.id} onClick={() => setSelectedRatio(r.id)} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${selectedRatio === r.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-300'}`}>
-                      {r.id}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <p className="text-[9px] font-black text-slate-900 uppercase tracking-widest mb-3">场景风格</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {STYLE_CONFIGS.map(style => (
-                    <button key={style.id} onClick={() => setSelectedStyle(style.id)} className={`flex items-center gap-2 p-3 rounded-xl border transition-all text-left ${selectedStyle === style.id ? 'border-orange-500 bg-orange-50 text-orange-900' : 'border-slate-100 bg-slate-50 text-slate-500'}`}>
-                      <span className="text-base">{style.icon}</span>
-                      <span className="text-[10px] font-bold">{style.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <p className="text-[9px] font-black text-slate-900 uppercase tracking-widest mb-3">核心卖点点亮</p>
-                <div className="flex flex-wrap gap-2">
-                  {FINE_TUNE_TAGS.map(tag => (
-                    <button key={tag.id} onClick={() => setSelectedFineTunes(p => p.includes(tag.id) ? p.filter(i => i !== tag.id) : [...p, tag.id])} className={`px-3 py-1.5 rounded-full text-[9px] font-bold border transition-all ${selectedFineTunes.includes(tag.id) ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>
-                      {tag.name}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <div className={`w-10 h-5 rounded-full relative transition-all ${isUltraHD ? 'bg-orange-500' : 'bg-slate-200'}`}>
-                    <input type="checkbox" className="sr-only" checked={isUltraHD} onChange={e => setIsUltraHD(e.target.checked)} />
-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isUltraHD ? 'left-6' : 'left-1'}`} />
-                  </div>
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">4K 超清重构</span>
-                </label>
-                <button onClick={() => handleGenerate()} disabled={isProcessing} className="px-8 h-14 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl flex items-center gap-3">
-                  {isProcessing ? <RefreshCw className="animate-spin w-4 h-4" /> : <Zap className="w-4 h-4 fill-current" />}
-                  执行重构
-                </button>
-              </div>
-            </div>
-          )}
-        </aside>
-
-        {/* 展示主区 */}
-        <main className="col-span-12 lg:col-span-8">
-          <div className={`relative min-h-[750px] bg-white rounded-[40px] shadow-sm border border-slate-200 flex overflow-hidden ${step === 3 ? 'flex-col' : 'items-center justify-center'}`}>
-            <div className={`relative flex items-center justify-center transition-all duration-700 p-8 ${step === 3 ? 'h-2/3 bg-slate-50/50 border-b border-slate-100' : 'h-full w-full'}`}>
-              {isProcessing && (
-                <div className="absolute inset-0 z-40 bg-white/90 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in">
-                  <div className="relative mb-6">
-                    <RefreshCw className="w-16 h-16 text-orange-500 animate-spin" />
-                    <Hand className="absolute inset-0 m-auto w-6 h-6 text-orange-200 fill-orange-50 animate-pulse" />
-                  </div>
-                  <p className="text-xl font-black tracking-tight">暖心小手套正在渲染...</p>
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-3">深度神经网络光影重构中</p>
-                </div>
-              )}
-
-              {generatedResult ? (
-                <div className="relative group w-full h-full flex items-center justify-center animate-in zoom-in-95">
-                  <img src={generatedResult} className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" />
-                  <div className="absolute top-6 right-6 flex gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                    <button className="p-4 bg-white/90 backdrop-blur rounded-2xl shadow-xl hover:scale-105 transition-transform">
-                      <Download className="w-6 h-6 text-slate-900" />
-                    </button>
-                  </div>
-                </div>
-              ) : !isProcessing && (
-                <div className="text-center max-w-sm">
-                  <div className="w-24 h-24 bg-slate-50 rounded-[32px] flex items-center justify-center mx-auto mb-10 border border-slate-100 shadow-inner rotate-6">
-                    <Hand className="w-10 h-10 text-slate-200 fill-slate-50" />
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900 mb-2">等待视觉执行</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-loose">
-                    导入产品原图并配置参数，点击“执行重构”开启 AI 视觉创作。
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {step === 3 && (
-              <div className="h-1/3 bg-white flex flex-col animate-in slide-in-from-bottom">
-                <div className="px-8 py-4 border-b border-slate-50 flex items-center justify-between">
+      <div className="max-w-[1200px] mx-auto p-8">
+        {step === 'upload' ? (
+          <div className="space-y-10 animate-in fade-in duration-700">
+            {/* 1. 营销意图与对话 */}
+            <section className="bg-white rounded-[40px] p-10 shadow-sm border border-slate-100">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                <div className="lg:col-span-7 space-y-6">
                   <div className="flex items-center gap-3">
-                    <Bot className="w-5 h-5 text-orange-500" />
-                    <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">AI 导演微调建议</p>
+                    <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                      <MessageSquareText className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <h2 className="text-xl font-black italic">您想如何重构这件产品？</h2>
                   </div>
-                  <p className="text-[9px] text-emerald-500 font-black uppercase tracking-widest flex items-center gap-1.5 animate-pulse">● 实时交互</p>
+                  <textarea 
+                    value={userIntent}
+                    onChange={(e) => setUserIntent(e.target.value)}
+                    placeholder="描述您的创意意图，例如：'在好莱坞风格的摄影棚中，配合明亮的聚光灯，展现产品的高级金属质感'..."
+                    className="w-full h-40 bg-slate-50 border border-slate-100 rounded-[32px] p-8 text-base focus:outline-none focus:ring-4 focus:ring-orange-500/10 transition-all resize-none shadow-inner"
+                  />
                 </div>
                 
-                <div className="flex-1 overflow-y-auto px-8 py-4 space-y-4">
-                  {chatMessages.length === 0 ? (
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-orange-600">
-                        <MessageSquareText className="w-4 h-4" />
-                      </div>
-                      <div className="bg-orange-50 p-4 rounded-2xl text-[11px] text-orange-900 font-medium max-w-[80%]">
-                        我是您的视觉导演。对当前渲染的光影、材质、构图不满意？直接告诉我您的想法，例如：“光影再柔和一些”或“背景换成极简大理石”。
-                      </div>
+                <div className="lg:col-span-5 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                      <ImageIcon className="w-5 h-5" />
                     </div>
-                  ) : (
-                    chatMessages.map((msg, i) => (
-                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] p-3 rounded-2xl text-[11px] font-medium shadow-sm ${
-                          msg.role === 'user' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-900'
-                        }`}>
-                          {msg.text}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-
-                <div className="p-6 bg-slate-50 border-t border-slate-100">
-                  <form onSubmit={(e) => { e.preventDefault(); if (chatInput.trim()) handleGenerate(chatInput); setChatInput(""); }} className="relative">
-                    <input 
-                      type="text" 
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="发送微调指令..."
-                      className="w-full h-14 bg-white border border-slate-200 rounded-2xl px-6 text-xs focus:outline-none focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm pr-16"
-                    />
-                    <button type="submit" disabled={isProcessing || !chatInput.trim()} className="absolute right-2 top-2 w-10 h-10 bg-orange-500 text-white rounded-xl flex items-center justify-center hover:bg-orange-600 transition-all shadow-lg disabled:opacity-30">
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </form>
+                    <h2 className="text-lg font-black">图片文字与美化</h2>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">主标题 (AI 会自动美化排版)</p>
+                      <input 
+                        type="text" 
+                        value={textConfig.title}
+                        onChange={(e) => setTextConfig({...textConfig, title: e.target.value})}
+                        placeholder="如：跨境爆款 / 2024 夏季新品"
+                        className="w-full h-14 bg-slate-50 border border-slate-100 rounded-2xl px-6 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">详情描述 (自动翻译/卖点擦除)</p>
+                      <input 
+                        type="text" 
+                        value={textConfig.detail}
+                        onChange={(e) => setTextConfig({...textConfig, detail: e.target.value})}
+                        placeholder="如：限时 8 折 / High Quality"
+                        className="w-full h-14 bg-slate-50 border border-slate-100 rounded-2xl px-6 text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
+            </section>
+
+            {/* 2. 多角度素材 */}
+            <section className="bg-white rounded-[40px] p-10 shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-lg font-black">多角度原图素材 <span className="text-slate-400 ml-2 font-medium">提示：上传多角度可提升 3D 还原度</span></h2>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-5">
+                {sourceImages.map((img, idx) => (
+                  <div key={idx} className="relative group w-36 h-36 rounded-3xl overflow-hidden shadow-md ring-1 ring-slate-100">
+                    <img src={img} className="w-full h-full object-cover" />
+                    <button onClick={() => removeImage(idx)} className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-sm">
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </button>
+                  </div>
+                ))}
+                {sourceImages.length < 5 && (
+                  <label className="w-36 h-36 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 hover:bg-orange-50/30 transition-all group relative">
+                    <input type="file" multiple accept="image/*" onChange={handleUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+                    <Plus className="w-8 h-8 text-slate-300 group-hover:text-orange-500 mb-2" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">上传新视角</span>
+                  </label>
+                )}
+              </div>
+            </section>
+
+            {/* 3. 落地场景用途 (更新后的选项) */}
+            <section className="bg-white rounded-[40px] p-10 shadow-sm border border-slate-100">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                  <LayoutGrid className="w-5 h-5" />
+                </div>
+                <h2 className="text-lg font-black">落地场景用途</h2>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {SCENARIO_CONFIGS.map(cfg => (
+                  <button 
+                    key={cfg.id} 
+                    onClick={() => setSelectedScenario(cfg.id)} 
+                    className={`flex flex-col items-center p-6 rounded-[32px] border transition-all text-center ${selectedScenario === cfg.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl scale-[1.02]' : 'bg-slate-50/50 border-slate-50 text-slate-400 hover:bg-slate-50 hover:text-slate-900'}`}
+                  >
+                    <span className="text-3xl mb-3">{cfg.icon}</span>
+                    <span className="text-[11px] font-black uppercase tracking-widest leading-tight">{cfg.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              {selectedScenario === ScenarioType.MODEL_REPLACEMENT && (
+                <div className="mt-8 pt-8 border-t border-slate-50 space-y-4 animate-in fade-in">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">设定模特肤色/国籍</p>
+                  <div className="flex flex-wrap gap-2">
+                    {MODEL_NATIONALITY.map(nat => (
+                      <button 
+                        key={nat.id} 
+                        onClick={() => setSelectedNationality(nat.prompt)}
+                        className={`px-6 py-2 rounded-xl text-[10px] font-black border transition-all ${selectedNationality === nat.prompt ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'}`}
+                      >
+                        {nat.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <button onClick={startGeneration} disabled={isProcessing || sourceImages.length === 0} className="w-full h-24 bg-orange-500 text-white rounded-[40px] font-black text-xl uppercase tracking-[0.2em] shadow-2xl shadow-orange-100 hover:bg-orange-600 transition-all active:scale-[0.98] disabled:bg-slate-200 disabled:shadow-none flex items-center justify-center gap-4">
+              {isProcessing ? <RefreshCw className="animate-spin w-8 h-8" /> : <Sparkles className="w-8 h-8" />}
+              开始商业重构
+            </button>
           </div>
-        </main>
+        ) : (
+          <div className="animate-in fade-in duration-1000">
+            <div className="bg-white rounded-[60px] p-12 shadow-sm border border-slate-100 min-h-[800px] flex flex-col items-center relative overflow-hidden">
+              {isProcessing && (
+                <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-md flex flex-col items-center justify-center text-center">
+                  <div className="w-24 h-24 border-4 border-orange-100 border-t-orange-500 rounded-full animate-spin mb-10"></div>
+                  <h3 className="text-3xl font-black text-slate-900 mb-4 animate-pulse">{LOADING_MESSAGES[loadingTextIndex]}</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.5em]">AI 渲染引擎全力全开...</p>
+                </div>
+              )}
+
+              {resultImage && (
+                <div className="w-full space-y-12">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-100">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <h2 className="text-3xl font-black tracking-tighter">商业重构交付完成</h2>
+                    </div>
+                    <button onClick={() => setStep('upload')} className="px-8 py-3 bg-slate-100 hover:bg-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors">← 返回修改</button>
+                  </div>
+
+                  <div className="relative group max-w-4xl mx-auto rounded-[50px] overflow-hidden shadow-2xl ring-1 ring-slate-100">
+                    <img src={resultImage} className="w-full h-auto object-cover" alt="Generated commerce asset" />
+                    <button onClick={() => {const l=document.createElement('a'); l.href=resultImage; l.download='dianshangbao_output.png'; l.click();}} className="absolute top-10 right-10 p-6 bg-white/90 backdrop-blur rounded-[30px] shadow-2xl opacity-0 group-hover:opacity-100 transition-all hover:scale-110">
+                      <Download className="w-8 h-8 text-slate-900" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="bg-slate-50 p-8 rounded-[40px] border border-slate-100">
+                      <div className="flex justify-between items-center mb-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">多角度拟合精度</p>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 animate-pulse" />
+                      </div>
+                      <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-[2000ms] ease-out w-full shadow-[0_0_12px_rgba(16,185,129,0.5)]"></div>
+                      </div>
+                      <p className="text-xs font-black mt-3 text-emerald-600">3D 模型完美匹配</p>
+                    </div>
+                    <div className="bg-slate-50 p-8 rounded-[40px] border border-slate-100">
+                      <div className="flex justify-between items-center mb-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">环境本土化重构</p>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 animate-pulse" />
+                      </div>
+                      <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-[2500ms] ease-out w-full shadow-[0_0_12px_rgba(16,185,129,0.5)]"></div>
+                      </div>
+                      <p className="text-xs font-black mt-3 text-emerald-600">光影重构已就绪</p>
+                    </div>
+                    <div className="bg-slate-50 p-8 rounded-[40px] border border-slate-100">
+                      <div className="flex justify-between items-center mb-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">文案擦除与美化</p>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 animate-pulse" />
+                      </div>
+                      <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-[3000ms] ease-out w-full shadow-[0_0_12px_rgba(16,185,129,0.5)]"></div>
+                      </div>
+                      <p className="text-xs font-black mt-3 text-emerald-600">视觉平衡已优化</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white text-slate-900 px-8 py-6 rounded-[32px] shadow-2xl flex items-center gap-8 animate-in slide-in-from-bottom z-[100] border border-slate-100 min-w-[400px]">
-          <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500">
-            <ShieldAlert className="w-6 h-6" />
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-white px-10 py-6 rounded-[40px] shadow-2xl border border-red-50 flex items-center gap-6 z-[200] animate-in slide-in-from-bottom">
+          <ShieldAlert className="w-8 h-8 text-red-500" />
+          <div>
+            <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">{error.title}</p>
+            <p className="text-sm font-bold text-slate-800">{error.msg}</p>
           </div>
-          <div className="flex-1">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{error.title}</p>
-            <p className="text-sm font-black leading-tight">{error.msg}</p>
-          </div>
-          <button onClick={() => setError(null)} className="p-3 hover:bg-slate-100 rounded-xl transition-all text-slate-300"><X /></button>
+          <button onClick={() => setError(null)} className="p-2 hover:bg-slate-50 rounded-full"><X className="w-5 h-5 text-slate-300" /></button>
         </div>
       )}
     </div>
@@ -347,4 +322,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
